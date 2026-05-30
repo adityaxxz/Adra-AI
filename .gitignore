@@ -1,0 +1,169 @@
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python / FastAPI
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+
+*.egg-info/
+.installed.cfg
+*.egg
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+.mypy_cache/
+.ruff_cache/
+
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# FastAPI Database Files
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints
+
+# =========================
+# Node / Next.js
+# =========================
+node_modules/
+
+.next/
+out/
+build/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Next.js Cache
+# =========================
+.turbo/
+.vercel/
+
+# =========================
+# TypeScript
+# =========================
+*.tsbuildinfo
+
+# =========================
+# Uploads / Documents
+# =========================
+uploads/
+documents/
+storage/
+data/
+
+# =========================
+# Vector Databases
+# =========================
+qdrant_storage/
+chroma/
+chromadb/
+vector_store/
+faiss_index/
+
+# =========================
+# AI / Model Files
+# =========================
+models/
+checkpoints/
+weights/
+
+*.pt
+*.pth
+*.bin
+*.gguf
+*.safetensors
+
+# =========================
+# LangSmith
+# =========================
+.langsmith/
+
+# =========================
+# Docker
+# =========================
+.docker/
+
+# =========================
+# Temporary Files
+# =========================
+tmp/
+temp/
+.cache/
+
+# =========================
+# Coverage
+# =========================
+coverage/
+.coverage
+coverage.xml
+
+# =========================
+# Secrets
+# =========================
+secrets/
+credentials.json
+service-account.json
+
+# =========================
+# Misc
+# =========================
+*.bak
+*.tmp
+*.orig
