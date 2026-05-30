@@ -21,4 +21,3 @@ class Architect(BaseModel):
 class TaskPlan(BaseModel):
     steps: list[Architect] = Field(description="A list of steps to be taken to implement the task")
     model_config = ConfigDict(extra="allow")   #allows extra additional fields passed during model instantiation, store within the model instance 
-
