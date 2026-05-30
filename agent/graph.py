@@ -1,21 +1,23 @@
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-from prompts import planner_prompt, architect_prompt, coder_prompt
-from state import Plan, Architect, TaskPlan, CoderState
+from agent.prompts import planner_prompt, architect_prompt, coder_prompt
+from agent.state import Plan, Architect, TaskPlan, CoderState
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from tools import *
+from agent.tools import *
 from langchain.agents import create_agent
 
 from dotenv import load_dotenv
 load_dotenv()
 
 # llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
+# llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
+
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
-# def structured_llm(schema):
-#     """Groq gpt-oss models work reliably with json_schema, not function_calling."""
-#     return llm.with_structured_output(schema, method="json_schema")
+def structured_llm(schema):
+    """Groq gpt-oss models work reliably with json_schema, not function_calling."""
+    return llm.with_structured_output(schema, method="json_schema")
 
 
 def planner_agent(state: dict) -> dict:
@@ -94,9 +96,9 @@ graph.add_conditional_edges(
 agent = graph.compile()
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    user_prompt = "create a simple calculator web application."
-    result = agent.invoke({"user_prompt": user_prompt},{"recursion_limit": 100})
+#     user_prompt = "create a simple to-do list web application using html, css, javascript"
+#     result = agent.invoke({"user_prompt": user_prompt},{"recursion_limit": 100})
 
-    print(result)
+#     print(result)
