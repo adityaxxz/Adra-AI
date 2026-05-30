@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class File(BaseModel):
@@ -12,3 +12,13 @@ class Plan(BaseModel):
     techstack: str = Field(description="The tech stack to be used for the app, e.g. 'python', 'javascript', 'react', 'flask', etc.")
     features: list[str] = Field(description="A list of features that the app should have, e.g. 'user authentication', 'data visualization', etc.")
     files: list[File] = Field(description="A list of files to be created, each with a 'path' and 'purpose'")
+
+class Architect(BaseModel):
+    filepath: str=Field(description="The path to the file to be modified")
+    task_description: str = Field(description="A detailed description of the task to be performed on the file, e.g. 'add user authentication', 'implement data processing logic', etc.")
+
+
+class TaskPlan(BaseModel):
+    steps: list[Architect] = Field(description="A list of steps to be taken to implement the task")
+    model_config = ConfigDict(extra="allow")   #allows extra additional fields passed during model instantiation, store within the model instance 
+
