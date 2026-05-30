@@ -1,0 +1,104 @@
+/* Base styling */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Calculator container */
+#calculator {
+    max-width: 400px;
+    width: 100%;
+    margin: auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Display */
+.display {
+    height: 60px;
+    font-size: 2rem;
+    text-align: right;
+    padding: 10px 15px;
+    margin-bottom: 15px;
+    background-color: #e9ecef;
+    border: 2px solid #ced4da;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.2;
+}
+
+/* Buttons grid */
+.buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: minmax(60px, auto);
+    gap: 10px;
+}
+
+/* Individual button */
+.btn {
+    width: 100%;
+    height: 100%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    background-color: #f8f9fa;
+    border: 2px solid #ced4da;
+    border-radius: 8px;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn:hover,
+.btn:focus {
+    background-color: #e2e6ea;
+    outline: none;
+    transform: translateY(-2px);
+}
+
+/* Specific button colors (optional) */
+.btn[data-action="add"],
+.btn[data-action="subtract"],
+.btn[data-action="multiply"],
+.btn[data-action="divide"] {
+    background-color: #ffecb3;
+    border-color: #ffca28;
+}
+
+.btn[data-action="equals"] {
+    background-color: #c8e6c9;
+    border-color: #66bb6a;
+}
+
+.btn[data-action="clear"] {
+    background-color: #ffcdd2;
+    border-color: #e57373;
+}
+
+/* Responsive adjustments */
+@media (max-width: 400px) {
+    #calculator {
+        padding: 15px;
+    }
+    .display {
+        height: 50px;
+        font-size: 1.5rem;
+        padding: 8px 12px;
+    }
+    .buttons {
+        gap: 8px;
+    }
+    .btn {
+        font-size: 1.2rem;
+    }
+}
