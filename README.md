@@ -96,6 +96,8 @@ Example prompt:
 
 ```text
 Create a simple to-do list web application using HTML, CSS, and JavaScript
+Create a simple calculator web application.
+Create a simple blog API in FastAPI with a SQLite database.
 ```
 
 Optional flags:

@@ -16,14 +16,12 @@ def architect_prompt(plan: str) -> str:
         RULES:
         - Create EXACTLY ONE step per file in the plan (no splitting a file across multiple steps).
         - Keep the total number of steps equal to the number of files in the plan.
-        - Order steps: HTML/structure first, CSS second, JavaScript/logic last.
+        - Order steps by dependency: foundational/shared layers first, files that depend on them later.
         - In each task_description:
             * Specify exactly what to implement in that single file.
-            * Name the variables, functions, classes, IDs, classes, and data-* attributes.
-            * For HTML: define the exact DOM contract (ids, classes, data-number, data-action, etc.)
-              that JavaScript will query with document.getElementById / querySelector.
-            * For JavaScript: state which HTML selectors/ids it MUST bind to from index.html.
-            * For CSS: list the exact class names and element ids from the HTML it must style.
+            * Name the key symbols (functions, classes, constants, types, config keys, public APIs).
+            * State what this file exposes (exports, endpoints, schemas, interfaces) that other files will use.
+            * State what this file must consume from other files (imports, calls, env vars, shared types).
         - Be concise but complete; avoid repeating the full project plan in every step.
 
         Project Plan: {plan}
@@ -31,13 +29,7 @@ def architect_prompt(plan: str) -> str:
     return ARCHITECT_PROMPT
 
 
-def coder_prompt(
-    filepath: str,
-    task_description: str,
-    existing_content: str,
-    project_context: str,
-    plan_summary: str,
-) -> str:
+def coder_prompt( filepath: str, task_description: str, existing_content: str, project_context: str, plan_summary: str, ) -> str:
     empty_note = "File is empty or new — implement from scratch." if not existing_content.strip() else ""
     return f"""
         You are the CODER agent. Implement ONE file in a single response.
@@ -54,11 +46,10 @@ def coder_prompt(
         {existing_content}
 
         INTEGRATION RULES (critical):
-        - JavaScript MUST use the exact ids, classes, and data-* attributes present in index.html.
-          Do NOT invent selectors like [data-number] unless they exist in the HTML.
-        - HTML MUST include every id/class/data attribute that JavaScript or CSS will reference.
-        - CSS selectors MUST match class names and ids defined in index.html.
-        - Script tags must use src paths that match actual filenames (e.g. script.js, style.css).
+        - Use only symbols, APIs, paths, and contracts defined in OTHER PROJECT FILES above.
+          Do NOT invent imports, module names, env keys, or endpoints that are not established elsewhere.
+        - This file MUST expose every symbol or interface that dependent files are expected to use.
+        - Import paths, module names, and references MUST match actual filenames and exports in the project.
         - Return runnable, production-ready code — no placeholders, no TODOs.
 
         Return the COMPLETE final file content only (not a diff, not markdown fences).
@@ -75,11 +66,11 @@ def integrator_prompt(project_files: str, plan_summary: str) -> str:
         {project_files}
 
         Check for:
-        - JavaScript selectors (getElementById, querySelector) that don't match any HTML element
-        - Missing event listeners because HTML lacks expected ids/classes/data-* attributes
-        - CSS selectors that don't match HTML class/id names
-        - Wrong script/stylesheet paths in HTML
-        - Logic bugs that prevent core features from working (e.g. calculator buttons not responding)
+        - References to symbols, modules, or APIs that do not exist in any other file
+        - Missing exports or public interfaces that dependent files expect to call or import
+        - Mismatched names between files (imports vs exports, config keys, shared constants)
+        - Wrong file paths, module paths, or resource references
+        - Logic bugs that prevent core features from working end-to-end
 
         Return updates ONLY for files that need fixes. Each update must be the FULL corrected file.
         If everything integrates correctly, return an empty updates list.

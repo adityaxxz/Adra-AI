@@ -62,6 +62,7 @@ def coder_agent(state: dict) -> dict:
         project_context=project_context,
         plan_summary=_plan_summary(coder_state.task_plan),
     )
+
     result = structured_invoke(CoderOutput, prompt)
     content = _strip_markdown_fences(result.content)
     write_file.invoke({"path": curr_task.filepath, "content": content})
@@ -104,9 +105,3 @@ graph.add_conditional_edges(
 graph.add_edge("integrator", END)
 
 agent = graph.compile()
-
-
-png_data = agent.get_graph().draw_mermaid_png()
-
-with open("workflow.png", "wb") as f:
-    f.write(png_data)
