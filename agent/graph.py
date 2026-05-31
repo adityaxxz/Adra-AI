@@ -1,43 +1,41 @@
-from langchain_groq import ChatGroq
-from langchain_google_genai import ChatGoogleGenerativeAI
-from agent.prompts import planner_prompt, architect_prompt, coder_prompt
-from agent.state import Plan, Architect, TaskPlan, CoderState
+import re
+from agent.prompts import planner_prompt, architect_prompt, coder_prompt, integrator_prompt
+from agent.state import Plan, TaskPlan, CoderState, CoderOutput, IntegrationResult
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from agent.tools import *
-from langchain.agents import create_agent
+from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_all_project_files
+from agent.llm_client import structured_invoke, truncate_for_context, get_stats
 
-from dotenv import load_dotenv
-load_dotenv()
+init_project_root()
 
-# llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
-# llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+def _strip_markdown_fences(content: str) -> str:
+    content = content.strip()
+    match = re.match(r"^```[\w]*\n(.*)\n```$", content, re.DOTALL)
+    if match:
+        return match.group(1)
+    return content
 
-def structured_llm(schema):
-    """Groq gpt-oss models work reliably with json_schema, not function_calling."""
-    return llm.with_structured_output(schema, method="json_schema")
+
+def _plan_summary(task_plan: TaskPlan) -> str:
+    plan = getattr(task_plan, "plan", None)
+    if plan is None:
+        return "Unknown project"
+    return f"{plan.name} — {plan.description} ({plan.techstack})"
 
 
 def planner_agent(state: dict) -> dict:
     user_prompt = state["user_prompt"]
-    res = llm.with_structured_output(Plan).invoke(planner_prompt(user_prompt)) 
-
-    if res is None:
-        raise ValueError("Planner didn't return a valid response")
+    res = structured_invoke(Plan, planner_prompt(user_prompt))
     return {"plan": res}
 
-def architect_agent(state:dict) -> dict:
+
+def architect_agent(state: dict) -> dict:
     plan: Plan = state["plan"]
-    res = llm.with_structured_output(TaskPlan).invoke(architect_prompt(plan))
-
-    if res is None:
-        raise ValueError("Architect didn't return a valid response")
-    
-    res.plan = plan     #adding the previous `plan` context
-
+    res = structured_invoke(TaskPlan, architect_prompt(plan))
+    res.plan = plan
     return {"task_plan": res}
+
 
 def coder_agent(state: dict) -> dict:
     coder_state = state.get("coder_state")
@@ -47,58 +45,68 @@ def coder_agent(state: dict) -> dict:
 
     steps = coder_state.task_plan.steps
 
-    if coder_state.current_step_idx >= len(steps):  
+    if coder_state.current_step_idx >= len(steps):
         return {"coder_state": coder_state, "status": "DONE"}
 
     curr_task = steps[coder_state.current_step_idx]
-    existing_content= read_file.run(curr_task.filepath)  #reads the curr content of the file
+    existing_content = read_file.invoke({"path": curr_task.filepath})
+    existing_content = truncate_for_context(existing_content)
 
-    user_prompt = (
-        f"Task: {curr_task.task_description}\n"
-        f"File: {curr_task.filepath}\n"
-        f"Existing content:\n{existing_content}\n"
-        "Use write_file(path, content) to save your changes."
+    project_context = read_sibling_files_context(curr_task.filepath)
+    project_context = truncate_for_context(project_context, max_chars=8000)
+
+    prompt = coder_prompt(
+        filepath=curr_task.filepath,
+        task_description=curr_task.task_description,
+        existing_content=existing_content,
+        project_context=project_context,
+        plan_summary=_plan_summary(coder_state.task_plan),
     )
+    result = structured_invoke(CoderOutput, prompt)
+    content = _strip_markdown_fences(result.content)
+    write_file.invoke({"path": curr_task.filepath, "content": content})
 
-    system_prompt = coder_prompt()
-
-    coder_tools = [read_file, write_file, list_files, get_current_directory]
-
-    agent = create_agent(llm , coder_tools)
-
-    agent.invoke({"messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-    })
-    
     coder_state.current_step_idx += 1
-
     return {"coder_state": coder_state}
+
+
+def integrator_agent(state: dict) -> dict:
+    task_plan: TaskPlan = state["coder_state"].task_plan
+    project_files = read_all_project_files()
+    project_files = truncate_for_context(project_files, max_chars=12000)
+
+    prompt = integrator_prompt(project_files, _plan_summary(task_plan))
+    result = structured_invoke(IntegrationResult, prompt)
+
+    for update in result.updates:
+        content = _strip_markdown_fences(update.content)
+        write_file.invoke({"path": update.filepath, "content": content})
+
+    return {"integration_fixes": len(result.updates)}
+
 
 graph = StateGraph(dict)
 
 graph.add_node("planner", planner_agent)
 graph.add_node("architect", architect_agent)
 graph.add_node("coder", coder_agent)
+graph.add_node("integrator", integrator_agent)
 
-# graph.set_entry_point("planner")
 graph.add_edge(START, "planner")
 graph.add_edge("planner", "architect")
 graph.add_edge("architect", "coder")
 
 graph.add_conditional_edges(
-    "coder", 
-    lambda s: "END" if s.get("status") == "DONE" else "coder",
-    {"END": END, "coder": "coder"}
+    "coder",
+    lambda s: "integrator" if s.get("status") == "DONE" else "coder",
+    {"integrator": "integrator", "coder": "coder"},
 )
+graph.add_edge("integrator", END)
 
 agent = graph.compile()
 
 
-# if __name__ == "__main__":
+png_data = agent.get_graph().draw_mermaid_png()
 
-#     user_prompt = "create a simple to-do list web application using html, css, javascript"
-#     result = agent.invoke({"user_prompt": user_prompt},{"recursion_limit": 100})
-
-#     print(result)
+with open("workflow.png", "wb") as f:
+    f.write(png_data)

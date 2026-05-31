@@ -60,3 +60,35 @@ def run_cmd(cmd: str, cwd: str = None, timeout: int = 30) -> Tuple[int, str, str
 def init_project_root():
     PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
     return str(PROJECT_ROOT)
+
+
+def list_project_paths() -> list[str]:
+    if not PROJECT_ROOT.exists():
+        return []
+    return sorted(
+        str(f.relative_to(PROJECT_ROOT)).replace("\\", "/")
+        for f in PROJECT_ROOT.glob("**/*")
+        if f.is_file()
+    )
+
+
+def read_sibling_files_context(exclude_path: str) -> str:
+    """Return contents of all other project files for cross-file integration."""
+    exclude = exclude_path.replace("\\", "/")
+    parts: list[str] = []
+    for rel_path in list_project_paths():
+        if rel_path == exclude:
+            continue
+        content = read_file.invoke({"path": rel_path})
+        if content.strip():
+            parts.append(f"=== {rel_path} ===\n{content}")
+    return "\n\n".join(parts) if parts else "(no other project files yet)"
+
+
+def read_all_project_files() -> str:
+    parts: list[str] = []
+    for rel_path in list_project_paths():
+        content = read_file.invoke({"path": rel_path})
+        if content.strip():
+            parts.append(f"=== {rel_path} ===\n{content}")
+    return "\n\n".join(parts) if parts else "(empty project)"

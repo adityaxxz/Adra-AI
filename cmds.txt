@@ -1,4 +1,4 @@
-uv add groq langchain langchain-core langchain-groq langgraph pydantic python-dotenv
+uv add groq langchain langchain-core langchain-groq langgraph pydantic python-dotenv langchain-google-genai langchain-community
 
 uv sync
 uv pip install -r pyproject.toml

@@ -9,8 +9,10 @@ flowchart LR
     A[User prompt] --> B[Planner]
     B --> C[Architect]
     C --> D[Coder]
-    D -->|More steps| D
-    D -->|All steps done| E[Generated project]
+    D -->|Done?| F{ }
+
+    F -->|No| D
+    F -->|Yes| E[Generated project]
 ```
 
 1. **Planner** — Converts your prompt into a structured project plan: app name, description, tech stack, features, and target files.
@@ -46,22 +48,21 @@ The coder loops until every architect step is complete.
 ## Installation
 
 ### Option A — uv (recommended)
+- install uv first
 
 ```powershell
-git clone https://github.com/<your-username>/Adra-AI.git
+git clone https://github.com/adityaxxz/Adra-AI.git
 cd Adra-AI
-uv sync
-```
 
-### Option B — pip
-
-```powershell
-git clone https://github.com/<your-username>/Adra-AI.git
-cd Adra-AI
-python -m venv .venv
+uv venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+
+uv sync
+  `or`
+uv pip install -r pyproject.toml
+
 ```
+
 
 ## Configuration
 
@@ -150,12 +151,5 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 # llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
 # llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
 ```
-
-## Roadmap ideas
-
-- [ ] Per-run output folders with timestamps
-- [ ] Shell command execution in the coder loop (`run_cmd` tool exists but is not wired in yet)
-- [ ] Web UI for prompts and live progress
-- [ ] Support for more LLM providers
 
 

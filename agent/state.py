@@ -24,6 +24,21 @@ class TaskPlan(BaseModel):
     model_config = ConfigDict(extra="allow")   #allows extra additional fields passed during model instantiation, store within the model instance 
 
 
+class CoderOutput(BaseModel):
+    content: str = Field(description="The complete file content to write (full file, not a diff or snippet)")
+
+
+class FileUpdate(BaseModel):
+    filepath: str = Field(description="Path of the file to update")
+    content: str = Field(description="Corrected full file content")
+
+
+class IntegrationResult(BaseModel):
+    updates: list[FileUpdate] = Field(
+        description="Files that need correction for cross-file integration. Empty list if everything works."
+    )
+
+
 class CoderState(BaseModel):
     task_plan: TaskPlan = Field(description="The plan for the task to be implemented")
     current_step_idx: int = Field(0, description="The index of the current step in the implementation steps")
