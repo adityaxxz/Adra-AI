@@ -7,23 +7,23 @@ A multi-agent coding assistant that turns a natural-language project prompt into
 ```mermaid
 flowchart LR
 
-    User([User Prompt])
-    Planner[Planner Agent]
-    Architect[Architect Agent]
-    Coder[Coder Agent]
-    Decision{Tasks Complete?}
-    Integrator[Integrator Agent]
-    Output([Generated Project])
+    A([User Prompt])
+    B[Planner]
+    C[Architect]
+    D[Coder]
+    E{Tasks Complete?}
+    F[Integrator]
+    G([Generated Project])
 
-    User --> Planner
-    Planner --> Architect
-    Architect --> Coder
-    Coder --> Decision
+    A --> B
+    B --> C
+    C --> D
+    D --> E
 
-    Decision -->|No| Coder
-    Decision -->|Yes| Integrator
+    E -->|No| D
+    E -->|Yes| F
 
-    Integrator --> Output
+    F --> G
 ```
 
 1. **Planner** — Converts your prompt into a structured project plan: app name, description, tech stack, features, and target files.
