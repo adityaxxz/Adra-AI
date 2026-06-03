@@ -6,7 +6,8 @@ Thumbs.db
 desktop.ini
 
 g.ipynb
-
+test.py
+agent/repository/test.py
 
 # =========================
 # IDE
