@@ -1,5 +1,5 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from models import RepositoryFile, CodeChunk
+from agent.repository.models import RepositoryFile, CodeChunk
 
 
 splitter = RecursiveCharacterTextSplitter(

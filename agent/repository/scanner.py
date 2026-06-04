@@ -1,5 +1,5 @@
 from pathlib import Path
-from models import RepositoryFile
+from agent.repository.models import RepositoryFile
 
 
 SUPPORTED_EXTENSIONS = {

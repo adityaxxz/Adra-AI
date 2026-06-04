@@ -35,8 +35,16 @@ def architect_prompt(plan: str) -> str:
     return ARCHITECT_PROMPT
 
 
-def coder_prompt( filepath: str, task_description: str, existing_content: str, project_context: str, plan_summary: str, ) -> str:
+def coder_prompt( filepath: str, task_description: str, existing_content: str, project_context: str, plan_summary: str, repository_context: str = "", ) -> str:
     empty_note = "File is empty or new — implement from scratch." if not existing_content.strip() else ""
+    repo_section = f"""
+        
+        REPOSITORY CONTEXT (relevant code from existing codebase):
+        {repository_context}
+        
+        Use this repository context to understand existing patterns, APIs, and conventions.
+        """ if repository_context.strip() else ""
+    
     return f"""
         You are the CODER agent. Implement ONE file in a single response.
 
@@ -44,6 +52,7 @@ def coder_prompt( filepath: str, task_description: str, existing_content: str, p
         File: {filepath}
         Task: {task_description}
         {empty_note}
+        {repo_section}
 
         OTHER PROJECT FILES (already written — your code MUST integrate with these exactly):
         {project_context}
@@ -52,7 +61,7 @@ def coder_prompt( filepath: str, task_description: str, existing_content: str, p
         {existing_content}
 
         INTEGRATION RULES (critical):
-        - Use only symbols, APIs, paths, and contracts defined in OTHER PROJECT FILES above.
+        - Use only symbols, APIs, paths, and contracts defined in OTHER PROJECT FILES above or in REPOSITORY CONTEXT.
           Do NOT invent imports, module names, env keys, or endpoints that are not established elsewhere.
         - This file MUST expose every symbol or interface that dependent files are expected to use.
         - Import paths, module names, and references MUST match actual filenames and exports in the project.

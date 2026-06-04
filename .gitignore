@@ -9,6 +9,9 @@ g.ipynb
 test.py
 agent/repository/test.py
 
+IMPLEMENTATION_SUMMARY.md
+ARCHITECTURE_DECISIONS.md
+
 # =========================
 # IDE
 # =========================

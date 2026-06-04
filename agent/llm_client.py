@@ -50,8 +50,8 @@ def get_stats() -> dict:
 
 
 #! MODELS
-# llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+# llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
 
 
 def structured_invoke(schema: Type[T], prompt: str) -> T:

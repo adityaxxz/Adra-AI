@@ -1,13 +1,12 @@
-from models import SearchResult
+from agent.repository.models import SearchResult
+from agent.repository.embeddings import embed_text
+from agent.repository.vector_store import get_collection
 
-from embeddings import embed_text
-from vector_store import get_collection
 
-
-def retrieve( query: str, k: int = 5, ) -> list[SearchResult]:
+def retrieve(query: str, k: int = 5, collection_name: str = None) -> list[SearchResult]:
     query_embedding = embed_text(query)
 
-    collection = get_collection()
+    collection = get_collection(collection_name)
 
     results = collection.query(
         query_embeddings=[query_embedding],
