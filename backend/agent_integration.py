@@ -55,7 +55,7 @@ class AgentIntegration:
         # Initialize project root
         project_root = f"./generated_projects/{project_id}"
         os.makedirs(project_root, exist_ok=True)
-        init_project_root()
+        set_project_root(project_root)
         
         return project
     

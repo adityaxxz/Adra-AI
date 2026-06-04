@@ -32,47 +32,6 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: adrai-backend
-    environment:
-      - DATABASE_URL=postgresql://adrai:adrai_password@postgres:5432/adrai
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
-      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
-      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
-      - GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
-      - GITHUB_OAUTH_CLIENT_SECRET=${GITHUB_OAUTH_CLIENT_SECRET}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - generated_projects:/app/generated_projects
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: adrai-frontend
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
-      - NEXT_PUBLIC_GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
 volumes:
   postgres_data:
   qdrant_data:
-  generated_projects:

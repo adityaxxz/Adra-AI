@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 from langchain_core.tools import tool
 
 # Default project root for project generation mode
-DEFAULT_PROJECT_ROOT = pathlib.Path.cwd() / "generated_project"
+DEFAULT_PROJECT_ROOT = pathlib.Path.cwd() / "generated_projects"
 # Current active project root (can be changed for repository editing mode)
 PROJECT_ROOT = DEFAULT_PROJECT_ROOT
 

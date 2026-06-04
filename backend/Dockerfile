@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
@@ -18,13 +18,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY agent/ ./agent/
 
 # Copy backend code
-COPY main.py .
-COPY auth.py backend/
-COPY db_models.py backend/
-COPY websocket_manager.py backend/
-COPY background_tasks.py backend/
-COPY agent_integration.py backend/
-COPY services/ backend/services/
+COPY backend/main.py .
+COPY backend/auth.py backend/
+COPY backend/db_models.py backend/
+COPY backend/websocket_manager.py backend/
+COPY backend/background_tasks.py backend/
+COPY backend/agent_integration.py backend/
+COPY backend/error_handlers.py backend/
+COPY backend/rate_limit.py backend/
+COPY backend/services/ backend/services/
 
 # Create necessary directories
 RUN mkdir -p generated_projects

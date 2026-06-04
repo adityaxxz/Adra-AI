@@ -1,14 +1,22 @@
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 import os
 import uuid
 from datetime import datetime
+from slowapi.errors import RateLimitExceeded
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import zipfile
+import io
 import shutil
+import logging
 
 from backend.auth import (
     oauth_callback, GoogleOAuth, GitHubOAuth, get_current_user,
@@ -17,15 +25,45 @@ from backend.auth import (
 from backend.db_models import Base, User, Project, Repository, Session, SessionMode, ProjectStatus
 from backend.websocket_manager import manager, ProgressReporter
 from backend.background_tasks import task_manager
+from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
+from backend.error_handlers import (
+    http_exception_handler,
+    validation_exception_handler,
+    sqlalchemy_exception_handler,
+    generic_exception_handler,
+    not_found_exception_handler
+)
+
+# Import agent tools for project root management
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agent.tools import set_project_root
 
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://adrai:adrai_password@localhost:5432/adrai")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://adrai:adrai_password@localhost:5432/adrai")
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # FastAPI app
 app = FastAPI(title="Adra-AI API", version="1.0.0")
+
+# Configure rate limiting
+# TEMPORARILY DISABLED FOR TESTING
+# app.state.limiter = limiter
+# app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
+# Configure error handlers
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
+app.add_exception_handler(StarletteHTTPException, not_found_exception_handler)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # CORS middleware
 app.add_middleware(
@@ -100,7 +138,8 @@ class GenerationRequest(BaseModel):
 # =========================
 
 @app.get("/health")
-async def health_check():
+# @limiter.limit("60/minute")  # TEMPORARILY DISABLED FOR TESTING
+async def health_check(request: Request):
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
@@ -110,7 +149,8 @@ async def health_check():
 # =========================
 
 @app.get("/auth/{provider}/login")
-async def oauth_login(provider: str, redirect_uri: Optional[str] = None):
+# @limiter.limit(RATE_LIMITS["auth"])  # TEMPORARILY DISABLED FOR TESTING
+async def oauth_login(request: Request, provider: str, redirect_uri: Optional[str] = None):
     """Get OAuth authorization URL."""
     if redirect_uri is None:
         redirect_uri = f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/auth/{provider}/callback"
@@ -170,7 +210,9 @@ async def get_current_user_endpoint(current_user: dict = Depends(get_current_use
 # =========================
 
 @app.post("/projects", response_model=dict)
+# @limiter.limit(RATE_LIMITS["api"])  # TEMPORARILY DISABLED FOR TESTING
 async def create_project(
+    request: Request,
     project: ProjectCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -289,12 +331,62 @@ async def delete_project(
     return {"message": "Project deleted successfully"}
 
 
+@app.get("/projects/{project_id}/download")
+async def download_project(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Download project files as a ZIP file."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user["sub"]
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    if not project.files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project has no files to download"
+        )
+    
+    # Create a ZIP file in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path, file_content in project.files.items():
+            if file_content is not None:
+                # Add file to ZIP with the proper path structure
+                zip_file.writestr(file_path, file_content)
+    
+    zip_buffer.seek(0)
+    
+    # Return the ZIP file as a StreamingResponse
+    return StreamingResponse(
+        io.BytesIO(zip_buffer.getvalue()),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={project.name}-project.zip"
+        }
+    )
+
+
 # =========================
 # Repositories Endpoints
 # =========================
 
 @app.post("/repositories", response_model=dict)
+# @limiter.limit(RATE_LIMITS["api"])  # TEMPORARILY DISABLED FOR TESTING
 async def create_repository(
+    request: Request,
     repository: RepositoryCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -480,7 +572,9 @@ async def delete_repository(
 # =========================
 
 @app.post("/generate")
+# @limiter.limit(RATE_LIMITS["generation"])  # TEMPORARILY DISABLED FOR TESTING
 async def start_generation(
+    http_request: Request,
     request: GenerationRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -505,6 +599,7 @@ async def start_generation(
     # Determine project root for generation
     project_root = f"./generated_projects/{session_id}"
     os.makedirs(project_root, exist_ok=True)
+    set_project_root(project_root)
     
     # Start appropriate task based on mode
     if request.mode == SessionMode.GENERATION:

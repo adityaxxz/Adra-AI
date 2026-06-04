@@ -127,12 +127,13 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.31
-pywin32==312
+
 pyyaml==6.0.3
 pyzmq==27.1.0
 qdrant-client==1.18.0
 redis==8.0.0
 referencing==0.37.0
+slowapi==0.1.9
 requests==2.34.2
 requests-oauthlib==2.0.0
 requests-toolbelt==1.0.0
