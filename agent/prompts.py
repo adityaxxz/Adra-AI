@@ -1,9 +1,15 @@
 
-def planner_prompt(user_prompt: str) -> str:
+def planner_prompt(user_prompt: str, retrieved_context: str) -> str:
     PLANNER_PROMPT = f"""
         You are PLANNER agent, convert the USER prompt into a complete engineering project plan.
 
-        user request : {user_prompt}"""
+        user request : {user_prompt}
+        
+        Use the repository context when planning.
+        Prefer modifying existing files over creating duplicate functionality.
+        
+        RELEVANT CODEBASE CONTEXT: {retrieved_context}
+        """
     return PLANNER_PROMPT
 
 

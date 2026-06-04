@@ -1,5 +1,6 @@
 import re
 from agent.prompts import planner_prompt, architect_prompt, coder_prompt, integrator_prompt
+from agent.repository.service import search_repository
 from agent.state import Plan, TaskPlan, CoderState, CoderOutput, IntegrationResult
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
@@ -26,7 +27,17 @@ def _plan_summary(task_plan: TaskPlan) -> str:
 
 def planner_agent(state: dict) -> dict:
     user_prompt = state["user_prompt"]
-    res = structured_invoke(Plan, planner_prompt(user_prompt))
+
+    retrieved_context = state.get("retrieved_context","")
+
+    res = structured_invoke(
+        Plan,
+        planner_prompt(
+            user_prompt=user_prompt,
+            retrieved_context=retrieved_context,
+        )
+    )
+
     return {"plan": res}
 
 
@@ -86,14 +97,35 @@ def integrator_agent(state: dict) -> dict:
     return {"integration_fixes": len(result.updates)}
 
 
+def repository_agent(state: dict):
+    try:
+        results = search_repository(state["user_prompt"])
+
+        context = "\n\n".join(
+            f"""
+                FILE: {r.file_path}
+
+                {r.content}
+            """ for r in results)
+
+    except Exception:
+        context = ""
+
+    return {
+        "retrieved_context": context
+    }
+
+
 graph = StateGraph(dict)
 
 graph.add_node("planner", planner_agent)
 graph.add_node("architect", architect_agent)
 graph.add_node("coder", coder_agent)
 graph.add_node("integrator", integrator_agent)
+graph.add_node("repository", repository_agent)
 
-graph.add_edge(START, "planner")
+graph.add_edge(START, "repository")
+graph.add_edge("repository", "planner")
 graph.add_edge("planner", "architect")
 graph.add_edge("architect", "coder")
 
