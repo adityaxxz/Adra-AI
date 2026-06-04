@@ -47,8 +47,19 @@ def read_file(path: str) -> str:
     p = safe_path_for_project(path)
     if not p.exists():
         return ""
-    with open(p, "r", encoding="utf-8") as f:
-        return f.read()
+    
+    # Try different encodings to handle various file types
+    encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252"]
+    
+    for encoding in encodings:
+        try:
+            with open(p, "r", encoding=encoding) as f:
+                return f.read()
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    
+    # If all encodings fail, it's likely a binary file
+    return f"[Binary file skipped: {path}]"
 
 
 @tool
@@ -96,9 +107,13 @@ def read_sibling_files_context(exclude_path: str) -> str:
     for rel_path in list_project_paths():
         if rel_path == exclude:
             continue
-        content = read_file.invoke({"path": rel_path})
-        if content.strip():
-            parts.append(f"=== {rel_path} ===\n{content}")
+        try:
+            content = read_file.invoke({"path": rel_path})
+            if content.strip() and not content.startswith("[Binary file skipped"):
+                parts.append(f"=== {rel_path} ===\n{content}")
+        except Exception as e:
+            # Skip files that can't be read
+            continue
     return "\n\n".join(parts) if parts else "(no other project files yet)"
 
 

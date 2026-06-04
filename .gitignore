@@ -12,6 +12,15 @@ agent/repository/test.py
 IMPLEMENTATION_SUMMARY.md
 ARCHITECTURE_DECISIONS.md
 
+
+temp_repos
+generated_project
+generated_project_tic_tac_toe
+generated_project_blog_api_using_fastapi_and_sqlite
+
+
+
+
 # =========================
 # IDE
 # =========================

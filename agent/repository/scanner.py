@@ -1,5 +1,6 @@
 from pathlib import Path
 from agent.repository.models import RepositoryFile
+from agent.repository.file_hash import generate_file_hash
 
 
 SUPPORTED_EXTENSIONS = {
@@ -23,6 +24,8 @@ IGNORE_DIRS = {
     "dist",
     "build",
     ".next",
+    "lib",
+    
 }
 
 
@@ -53,11 +56,14 @@ def scan_repository(repo_path: str) -> list[RepositoryFile]:
         except Exception:
             continue
 
+        file_hash = generate_file_hash(content)
+
         files.append(
             RepositoryFile(
                 path=str(file_path.relative_to(root)),
                 language=SUPPORTED_EXTENSIONS[suffix],
                 content=content,
+                file_hash=file_hash,
             )
         )
 
