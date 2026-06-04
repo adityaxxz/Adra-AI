@@ -1,10 +1,27 @@
 import pathlib
 import subprocess
-from typing import Tuple
+from typing import Tuple, Optional
 
 from langchain_core.tools import tool
 
-PROJECT_ROOT = pathlib.Path.cwd() / "generated_project"
+# Default project root for project generation mode
+DEFAULT_PROJECT_ROOT = pathlib.Path.cwd() / "generated_project"
+# Current active project root (can be changed for repository editing mode)
+PROJECT_ROOT = DEFAULT_PROJECT_ROOT
+
+
+def set_project_root(path: Optional[str] = None) -> None:
+    """Set the project root for file operations. If None, resets to default."""
+    global PROJECT_ROOT
+    if path is None:
+        PROJECT_ROOT = DEFAULT_PROJECT_ROOT
+    else:
+        PROJECT_ROOT = pathlib.Path(path).resolve()
+
+
+def get_project_root() -> pathlib.Path:
+    """Get the current project root."""
+    return PROJECT_ROOT
 
 
 def safe_path_for_project(path: str) -> pathlib.Path:

@@ -90,3 +90,23 @@ def integrator_prompt(project_files: str, plan_summary: str) -> str:
         Return updates ONLY for files that need fixes. Each update must be the FULL corrected file.
         If everything integrates correctly, return an empty updates list.
     """
+
+
+def explainer_prompt(user_question: str, repository_context: str) -> str:
+    return f"""
+        You are the EXPLAINER agent. Answer the user's question about the codebase using the retrieved repository context.
+
+        USER QUESTION: {user_question}
+
+        REPOSITORY CONTEXT:
+        {repository_context}
+
+        INSTRUCTIONS:
+        - Provide a clear, accurate answer based on the code context provided
+        - Explain how the feature/implementation works
+        - Reference specific files and code snippets when relevant
+        - If the context doesn't contain enough information to answer, state what additional context would be needed
+        - Be concise but thorough in your explanation
+
+        Answer the user's question directly and informatively.
+    """

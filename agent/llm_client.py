@@ -76,3 +76,25 @@ def structured_invoke(schema: Type[T], prompt: str) -> T:
             raise
 
     raise last_error or RuntimeError("Structured invoke failed after retries")
+
+
+def simple_invoke(prompt: str) -> str:
+    """One throttled LLM call that returns plain text (no structured output)."""
+    last_error: BaseException | None = None
+
+    for attempt in range(MAX_RETRIES):
+        _throttle(extra_wait=attempt * MIN_INTERVAL_SEC)
+
+        try:
+            result = llm.invoke(prompt)
+            if result is None:
+                raise ValueError("LLM returned None")
+            return result.content
+
+        except Exception as e:
+            last_error = e
+            if _is_rate_limit_error(e) and attempt < MAX_RETRIES - 1:
+                continue
+            raise
+
+    raise last_error or RuntimeError("Simple invoke failed after retries")

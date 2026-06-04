@@ -3,13 +3,17 @@ import sys
 import traceback
 from pathlib import Path
 
-from agent.graph import project_generation_agent, repository_editing_agent
+from agent.graph import project_generation_agent, repository_editing_agent, question_answering_agent
 from agent.llm_client import get_stats
 from agent.repository.service import index_repository, clone_github_repo
 from agent.repository.vector_store import set_active_collection
+from agent.tools import set_project_root, init_project_root
 
 
 def main():
+    # Initialize default project root for project generation mode
+    init_project_root()
+    
     parser = argparse.ArgumentParser(description="Adra-AI: Project generator and repository-aware AI software engineer")
     parser.add_argument("--recursion-limit", "-r", type=int, default=100,
                         help="Recursion limit for processing (default: 100)")
@@ -19,6 +23,8 @@ def main():
                         help="GitHub repository URL for repository-aware editing mode")
     parser.add_argument("--collection", type=str, default=None,
                         help="ChromaDB collection name for repository (default: auto-generated from repo name)")
+    parser.add_argument("--ask", action="store_true",
+                        help="Ask question mode: answer questions about the codebase without making changes")
 
     args = parser.parse_args()
 
@@ -62,14 +68,26 @@ def main():
         
         # Select appropriate agent based on mode
         if repo_path:
-            print("Mode: Repository-Aware Editing")
-            set_active_collection(collection_name)
-            agent = repository_editing_agent
-            initial_state = {
-                "user_prompt": user_prompt,
-                "repo_path": repo_path,
-                "collection_name": collection_name
-            }
+            if args.ask:
+                print("Mode: Repository Question Answering")
+                set_project_root(repo_path)
+                set_active_collection(collection_name)
+                agent = question_answering_agent
+                initial_state = {
+                    "user_prompt": user_prompt,
+                    "repo_path": repo_path,
+                    "collection_name": collection_name
+                }
+            else:
+                print("Mode: Repository-Aware Editing")
+                set_project_root(repo_path)
+                set_active_collection(collection_name)
+                agent = repository_editing_agent
+                initial_state = {
+                    "user_prompt": user_prompt,
+                    "repo_path": repo_path,
+                    "collection_name": collection_name
+                }
         else:
             agent = project_generation_agent
             initial_state = {"user_prompt": user_prompt}
@@ -80,13 +98,17 @@ def main():
         )
 
         stats = get_stats()
-        fixes = result.get("integration_fixes", 0)
         print(f"LLM API calls: {stats['api_calls']} (throttle: {stats['min_interval_sec']}s between calls)")
 
-        if fixes:
-            print(f"Integration fixes applied: {fixes} file(s)")
-
-        print("Final State:", result)
+        if args.ask:
+            # Display the answer for question-answering mode
+            answer = result.get("answer", "No answer generated.")
+            print(f"\nAnswer: {answer}")
+        else:
+            fixes = result.get("integration_fixes", 0)
+            if fixes:
+                print(f"Integration fixes applied: {fixes} file(s)")
+            print("Final State:", result)
 
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")

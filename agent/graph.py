@@ -1,13 +1,11 @@
 import re
-from agent.prompts import planner_prompt, architect_prompt, coder_prompt, integrator_prompt
+from agent.prompts import planner_prompt, architect_prompt, coder_prompt, integrator_prompt, explainer_prompt
 from agent.repository.service import search_repository
 from agent.state import Plan, TaskPlan, CoderState, CoderOutput, IntegrationResult
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_all_project_files
-from agent.llm_client import structured_invoke, truncate_for_context, get_stats
-
-init_project_root()
+from agent.llm_client import structured_invoke, simple_invoke, truncate_for_context, get_stats
 
 
 def _strip_markdown_fences(content: str) -> str:
@@ -152,6 +150,17 @@ def repository_agent(state: dict):
     return result
 
 
+def explainer_agent(state: dict) -> dict:
+    """Answer user's question about the codebase using retrieved context."""
+    user_question = state["user_prompt"]
+    retrieved_context = state.get("retrieved_context", "")
+    
+    prompt = explainer_prompt(user_question, retrieved_context)
+    answer = simple_invoke(prompt)
+    
+    return {"answer": answer}
+
+
 # Project Generation Graph (no repository context)
 project_generation_graph = StateGraph(dict)
 project_generation_graph.add_node("planner", planner_agent)
@@ -193,6 +202,17 @@ repository_editing_graph.add_conditional_edges(
 repository_editing_graph.add_edge("integrator", END)
 
 repository_editing_agent = repository_editing_graph.compile()
+
+# Question Answering Graph (ask about project without editing)
+question_answering_graph = StateGraph(dict)
+question_answering_graph.add_node("repository", repository_agent)
+question_answering_graph.add_node("explainer", explainer_agent)
+
+question_answering_graph.add_edge(START, "repository")
+question_answering_graph.add_edge("repository", "explainer")
+question_answering_graph.add_edge("explainer", END)
+
+question_answering_agent = question_answering_graph.compile()
 
 # Legacy: keep original agent for backward compatibility
 agent = project_generation_agent
