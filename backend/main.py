@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -17,6 +17,7 @@ import zipfile
 import io
 import shutil
 import logging
+import tempfile
 
 from backend.auth import (
     oauth_callback, GoogleOAuth, GitHubOAuth, get_current_user,
@@ -131,6 +132,7 @@ class GenerationRequest(BaseModel):
     project_id: Optional[str] = None
     repository_id: Optional[str] = None
     recursion_limit: int = 100
+    session_id: Optional[str] = None  # Allow frontend to provide session ID
 
 
 # =========================
@@ -470,6 +472,23 @@ async def get_repository(
             detail="Repository not found"
         )
     
+    # Get files structure if repository is local
+    files = {}
+    if repository.local_path and os.path.exists(repository.local_path):
+        try:
+            for root, dirs, filenames in os.walk(repository.local_path):
+                for filename in filenames:
+                    file_path = os.path.join(root, filename)
+                    relative_path = os.path.relpath(file_path, repository.local_path)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            files[relative_path] = f.read()
+                    except Exception as e:
+                        # Skip files that can't be read as text
+                        files[relative_path] = None
+        except Exception as e:
+            logger.error(f"Error reading repository files: {e}")
+    
     return {
         "id": repository.id,
         "name": repository.name,
@@ -482,7 +501,8 @@ async def get_repository(
         "chunks_count": repository.chunks_count,
         "created_at": repository.created_at.isoformat(),
         "updated_at": repository.updated_at.isoformat() if repository.updated_at else None,
-        "last_indexed_at": repository.last_indexed_at.isoformat() if repository.last_indexed_at else None
+        "last_indexed_at": repository.last_indexed_at.isoformat() if repository.last_indexed_at else None,
+        "files": files
     }
 
 
@@ -538,17 +558,74 @@ async def index_repository_endpoint(
 @app.delete("/repositories/{repository_id}")
 async def delete_repository(
     repository_id: str,
-    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a repository."""
+    print(f"Delete request for repository: {repository_id}")
+    
     result = await db.execute(
-        select(Repository).where(
-            Repository.id == repository_id,
-            Repository.user_id == current_user["sub"]
-        )
+        select(Repository).where(Repository.id == repository_id)
     )
     repository = result.scalar_one_or_none()
+    
+    if not repository:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found"
+        )
+    
+    print(f"Deleting repository: {repository.name}")
+    print(f"Local path: {repository.local_path}")
+    print(f"Collection name: {repository.collection_name}")
+    
+    try:
+        # First, delete all sessions that reference this repository
+        # This resolves the foreign key constraint issue
+        sessions_result = await db.execute(
+            select(Session).where(Session.repository_id == repository_id)
+        )
+        sessions = sessions_result.scalars().all()
+        print(f"Found {len(sessions)} sessions to delete")
+        
+        for session in sessions:
+            await db.delete(session)
+            print(f"Deleted session: {session.id}")
+        
+        await db.commit()
+        
+        # Delete Qdrant collection if exists
+        from backend.services.vector_store import get_vector_store
+        vector_store = get_vector_store()
+        try:
+            vector_store.clear_collection(repository.collection_name)
+            print(f"Cleared collection: {repository.collection_name}")
+        except Exception as e:
+            print(f"Failed to clear collection: {e}")
+        
+        # Delete uploaded files if they exist
+        if repository.local_path and repository.provider == 'local':
+            try:
+                import shutil
+                if os.path.exists(repository.local_path):
+                    shutil.rmtree(repository.local_path)
+                    print(f"Deleted local files: {repository.local_path}")
+            except Exception as e:
+                print(f"Failed to delete local files: {e}")
+        
+        # Delete repository from database
+        await db.delete(repository)
+        await db.commit()
+        
+        print("Repository deleted successfully")
+        
+        return {"message": "Repository deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting repository: {e}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete repository: {str(e)}"
+        )
     
     if not repository:
         raise HTTPException(
@@ -567,6 +644,67 @@ async def delete_repository(
     return {"message": "Repository deleted successfully"}
 
 
+@app.post("/upload-folder")
+async def upload_folder(
+    files: List[UploadFile] = File(...),
+    repository_name: str = Form(...),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload a local folder and create a repository."""
+    # Create a permanent directory to store uploaded files
+    upload_dir = os.path.join("uploaded_repos", f"{current_user['sub']}_{repository_name}_{int(datetime.utcnow().timestamp())}")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    try:
+        # Process uploaded files
+        for file in files:
+            # Construct the file path
+            file_path = os.path.join(upload_dir, file.filename)
+            
+            # Create directories if needed
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Write the file content
+            with open(file_path, 'wb') as f:
+                content = await file.read()
+                f.write(content)
+        
+        # Create repository record
+        repo_id = str(uuid.uuid4())
+        collection_name = f"repo_{repo_id.replace('-', '_')}"
+        
+        repository = Repository(
+            id=repo_id,
+            user_id=current_user["sub"],
+            name=repository_name,
+            local_path=upload_dir,
+            provider="local",
+            collection_name=collection_name,
+            is_indexed=False
+        )
+        
+        db.add(repository)
+        await db.commit()
+        await db.refresh(repository)
+        
+        return {
+            "success": True,
+            "repository_id": repository.id,
+            "local_path": upload_dir,
+            "files_count": len(files),
+            "message": "Folder uploaded successfully"
+        }
+        
+    except Exception as e:
+        # Clean up on error
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload folder: {str(e)}"
+        )
+
+
 # =========================
 # Generation Endpoints
 # =========================
@@ -580,7 +718,8 @@ async def start_generation(
     db: AsyncSession = Depends(get_db)
 ):
     """Start a generation task (project generation, repository editing, or question answering)."""
-    session_id = str(uuid.uuid4())
+    # Use provided session_id or generate a new one
+    session_id = request.session_id if request.session_id else str(uuid.uuid4())
     
     # Create session record
     db_session = Session(
@@ -678,7 +817,31 @@ async def start_generation(
                 detail="Repository not found"
             )
         
-        repo_path = repository.url if repository.url else repository.local_path
+        # Determine repo path - prioritize local path for local repos
+        if repository.local_path:
+            repo_path = repository.local_path
+        elif repository.url:
+            # Clone GitHub repositories to local path if needed
+            if repository.url.startswith('http'):
+                from agent.repository.service import clone_github_repo
+                repo_name = repository.url.split('/')[-1].replace('.git', '')
+                local_repo_path = f"./temp_repos/{repo_name}"
+                try:
+                    repo_path = clone_github_repo(repository.url, local_repo_path)
+                except Exception as e:
+                    print(f"Failed to clone repository: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to clone repository: {str(e)}"
+                    )
+            else:
+                repo_path = repository.url
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Repository URL or local path must be provided"
+            )
+        
         task_result = await task_manager.execute_question_answering(
             session_id=session_id,
             user_prompt=request.prompt,

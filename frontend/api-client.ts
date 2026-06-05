@@ -86,6 +86,24 @@ export const repositoriesAPI = {
     return response.data;
   },
 
+  uploadFolder: async (files: FileList, repositoryName: string) => {
+    const formData = new FormData();
+    
+    // Append all files
+    Array.from(files).forEach(file => {
+      formData.append('files', file);
+    });
+    
+    formData.append('repository_name', repositoryName);
+    
+    const response = await api.post('/upload-folder', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
   listRepositories: async () => {
     const response = await api.get('/repositories');
     return response.data;
@@ -117,6 +135,7 @@ export const generationAPI = {
     project_id?: string;
     repository_id?: string;
     recursion_limit?: number;
+    session_id?: string;
   }) => {
     const response = await api.post('/generate', data);
     return response.data;

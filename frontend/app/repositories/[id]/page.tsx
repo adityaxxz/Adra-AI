@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { repositoriesAPI, generationAPI } from '../../../api-client';
 import { useWebSocket } from '../../../websocket-hook';
+import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 
 interface Repository {
   id: string;
@@ -19,7 +20,10 @@ interface Repository {
   created_at: string;
   updated_at: string | null;
   last_indexed_at: string | null;
+  files?: Record<string, string | null>;
 }
+
+type Mode = 'ask' | 'editor';
 
 export default function RepositoryPage() {
   const router = useRouter();
@@ -31,15 +35,29 @@ export default function RepositoryPage() {
   const [isIndexing, setIsIndexing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [mode, setMode] = useState<Mode>('ask');
   const [question, setQuestion] = useState('');
-  const [qaMode, setQaMode] = useState(false);
-  const [answer, setAnswer] = useState('');
+  const [editorPrompt, setEditorPrompt] = useState('');
+  const [conversation, setConversation] = useState<Array<{role: string, content: string, editedFiles?: Record<string, string>}>>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
 
-  // WebSocket connection for indexing progress
+  const [showDirectory, setShowDirectory] = useState(true);
+
+  // WebSocket connection for indexing and generation progress
   const { isConnected, messages, latestMessage, error: wsError, clearError } = useWebSocket(
     sessionId || '',
-    user?.id || 'anonymous'
+    user?.sub || user?.id || 'anonymous'
   );
+  
+  // Debug WebSocket connection status
+  useEffect(() => {
+    console.log('WebSocket connection status:', isConnected);
+    console.log('Current sessionId:', sessionId);
+    console.log('Current user:', user);
+    console.log('WebSocket error:', wsError);
+  }, [isConnected, sessionId, user, wsError]);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -49,6 +67,77 @@ export default function RepositoryPage() {
     
     loadRepository();
   }, [repositoryId]);
+
+  // Auto-start indexing for new repositories
+  useEffect(() => {
+    if (repository && !repository.is_indexed && !isIndexing && !sessionId) {
+      handleStartIndexing();
+    }
+  }, [repository]);
+
+  // Process WebSocket messages based on mode
+  useEffect(() => {
+    if (latestMessage) {
+      console.log('WebSocket message received:', latestMessage);
+      console.log('Current mode:', mode);
+      console.log('Message type:', latestMessage.type);
+      console.log('Message step:', latestMessage.step);
+      
+      if (mode === 'ask') {
+        // Handle question answering responses - simplified for local repos
+        const answer = latestMessage.message || 
+                      latestMessage.data?.answer || 
+                      latestMessage.result?.answer || 
+                      latestMessage.data?.message ||
+                      latestMessage.result?.message;
+        
+        console.log('Extracted answer:', answer);
+        
+        // Process answer if we have meaningful content
+        if (answer && answer !== 'No response' && answer.length > 5) {
+          console.log('Processing answer:', answer.substring(0, 100));
+          setConversation(prev => [...prev, { role: 'assistant', content: String(answer) }]);
+          setIsProcessing(false);
+        } else if (latestMessage.type === 'error') {
+          console.log('Error message received:', latestMessage.error);
+          setConversation(prev => [...prev, { role: 'assistant', content: `Error: ${latestMessage.error || 'Unknown error'}` }]);
+          setIsProcessing(false);
+        } else if (latestMessage.step === 'answer' && latestMessage.message) {
+          // Direct answer message
+          console.log('Direct answer message:', latestMessage.message);
+          setConversation(prev => [...prev, { role: 'assistant', content: String(latestMessage.message) }]);
+          setIsProcessing(false);
+        } else if (latestMessage.type === 'complete') {
+          // Handle completion message
+          console.log('Complete message received');
+          const content = latestMessage.message || latestMessage.result?.message || latestMessage.result?.answer || 'Question answered';
+          if (content && content !== 'Question answered') {
+            setConversation(prev => [...prev, { role: 'assistant', content: String(content) }]);
+            setIsProcessing(false);
+          }
+        }
+      } else if (mode === 'editor') {
+        // Handle editor mode responses
+        if (latestMessage.data && latestMessage.data.edited_files) {
+          setConversation(prev => [...prev, { 
+            role: 'assistant', 
+            content: latestMessage.message || `Edited ${Object.keys(latestMessage.data.edited_files).length} file(s)`,
+            editedFiles: latestMessage.data.edited_files
+          }]);
+          setIsProcessing(false);
+        } else if (latestMessage.type === 'complete' || latestMessage.step === 'complete') {
+          // Handle completion message
+          const content = latestMessage.message || latestMessage.data?.message || 'Task completed';
+          setConversation(prev => [...prev, { role: 'assistant', content: String(content) }]);
+          setIsProcessing(false);
+        } else if (latestMessage.type === 'error') {
+          console.log('Error message received:', latestMessage.error);
+          setConversation(prev => [...prev, { role: 'assistant', content: `Error: ${latestMessage.error || 'Unknown error'}` }]);
+          setIsProcessing(false);
+        }
+      }
+    }
+  }, [latestMessage, mode]);
 
   const loadRepository = async () => {
     try {
@@ -87,56 +176,107 @@ export default function RepositoryPage() {
     }
 
     try {
+      console.log('Deleting repository:', repositoryId);
+      console.log('Current user:', user);
+      
       await repositoriesAPI.deleteRepository(repositoryId);
+      console.log('Repository deleted successfully');
       router.push('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete repository:', error);
-      alert('Failed to delete repository');
+      console.error('Error details:', error.response?.data);
+      alert(`Failed to delete repository: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
     }
   };
 
-  const handleQuestionSubmit = async (e: React.FormEvent) => {
+
+
+  const handleAskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim() || !repository) return;
 
     try {
-      setQaMode(true);
-      setAnswer('');
+      setIsProcessing(true);
+      setConversation(prev => [...prev, { role: 'user', content: question }]);
+      
+      console.log('Submitting question:', question);
+      console.log('Repository ID:', repository.id);
+      console.log('User ID:', user?.sub || user?.id);
+      
+      // Generate a session ID first to establish WebSocket connection
+      const newSessionId = `qa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log('Generated session ID:', newSessionId);
+      
+      setSessionId(newSessionId);
+      
+      // Give WebSocket time to connect
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       const response = await generationAPI.startGeneration({
         prompt: question,
         mode: 'question_answering',
         repository_id: repository.id,
-        recursion_limit: 100
+        recursion_limit: 100,
+        session_id: newSessionId
       });
 
-      setSessionId(response.session_id);
+      console.log('Generation response:', response);
+      console.log('Backend session ID:', response.session_id);
+      
+      setQuestion('');
       
       // We'll monitor the answer via WebSocket
     } catch (error: any) {
       console.error('Failed to submit question:', error);
-      setQaMode(false);
+      setIsProcessing(false);
+      setConversation(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your question.' }]);
+    }
+  };
+
+  const handleEditorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editorPrompt.trim() || !repository) return;
+
+    try {
+      setIsProcessing(true);
+      setConversation(prev => [...prev, { role: 'user', content: editorPrompt }]);
+      
+      const response = await generationAPI.startGeneration({
+        prompt: editorPrompt,
+        mode: 'editing',
+        repository_id: repository.id,
+        recursion_limit: 100
+      });
+
+      setSessionId(response.session_id);
+      setEditorPrompt('');
+      
+      // We'll monitor the answer via WebSocket
+    } catch (error: any) {
+      console.error('Failed to submit edit request:', error);
+      setIsProcessing(false);
+      setConversation(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your edit request.' }]);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-[#09090b]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600"></div>
       </div>
     );
   }
 
   if (!repository) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#09090b]">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">
+          <h1 className="text-2xl font-bold text-white mb-4">
             Repository Not Found
           </h1>
           <Link
             href="/dashboard"
-            className="text-indigo-600 hover:text-indigo-700"
+            className="text-violet-400 hover:text-violet-300"
           >
             Return to Dashboard
           </Link>
@@ -146,225 +286,345 @@ export default function RepositoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      {/* Navigation */}
-      <nav className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
-                ← Back to Dashboard
-              </Link>
+    <div className="min-h-screen bg-[#09090b] text-[#fafafa] flex">
+      {/* Sidebar */}
+      <aside className="w-64 glass-effect border-r border-zinc-800/50 flex flex-col">
+        <div className="p-6">
+          <div className="flex items-center space-x-3 mb-8">
+            <div className="w-9 h-9 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/25">
+              <span className="text-white font-bold text-sm">A</span>
             </div>
+            <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
+              Adra-AI
+            </Link>
           </div>
+
+          <nav className="space-y-1">
+            <Link href="/dashboard" className="sidebar-link">
+              <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+              Dashboard
+            </Link>
+          </nav>
         </div>
-      </nav>
+      </aside>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Repository Header */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 border border-slate-200 dark:border-slate-700 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-              {repository.name}
-            </h1>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              repository.is_indexed ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              {repository.is_indexed ? 'Indexed' : 'Pending'}
-            </span>
-          </div>
-
-          {repository.url && (
-            <p className="text-slate-600 dark:text-slate-300 mb-4">
-              <a href={repository.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                {repository.url}
-              </a>
-            </p>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-4">
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Provider</p>
-              <p className="font-semibold text-slate-900 dark:text-white">{repository.provider}</p>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-4">
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Files</p>
-              <p className="font-semibold text-slate-900 dark:text-white">{repository.files_count}</p>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-4">
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Chunks</p>
-              <p className="font-semibold text-slate-900 dark:text-white">{repository.chunks_count}</p>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="glass-effect border-b border-zinc-800/50 px-8 py-6">
+          <div className="flex items-center space-x-4">
+            <Link href="/dashboard" className="text-zinc-400 hover:text-white transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold text-white">{repository.name}</h1>
+              <p className="text-zinc-400 text-sm">Repository Details</p>
             </div>
           </div>
+        </header>
 
-          <div className="flex space-x-3">
-            {!repository.is_indexed && (
+        <div className="flex-1 overflow-auto">
+          <div className="max-w-7xl mx-auto px-8 py-8">
+            {/* Repository Info Card */}
+            <div className="card p-8 mb-8">
+              <div className="flex items-start justify-between mb-6">
+                <div className="flex items-center space-x-4">
+                  <div className="w-14 h-14 bg-indigo-600/10 rounded-2xl flex items-center justify-center border border-indigo-500/20">
+                    <svg className="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  </div>
+                  <div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      repository.is_indexed ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                    }`}>
+                      {repository.is_indexed ? '✓ Indexed' : '⏳ Pending'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex space-x-3">
+                  {!repository.is_indexed && (
+                    <button
+                      onClick={handleStartIndexing}
+                      disabled={isIndexing}
+                      className="btn-primary"
+                    >
+                      {isIndexing ? 'Indexing...' : 'Start Indexing'}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleDelete}
+                    className="btn-secondary"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-zinc-400 text-sm">
+                  {repository.provider === 'local' ? repository.local_path : repository.url}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50">
+                  <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wide">Provider</p>
+                  <p className="text-white font-medium">{repository.provider}</p>
+                </div>
+                <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50">
+                  <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wide">Files</p>
+                  <p className="text-white font-medium">{repository.files_count}</p>
+                </div>
+                <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50">
+                  <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wide">Chunks</p>
+                  <p className="text-white font-medium">{repository.chunks_count}</p>
+                </div>
+              </div>
+
+              {/* Progress Section */}
+              {(isIndexing || !repository.is_indexed) && (
+                <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50">
+                  <h3 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Indexing Progress
+                  </h3>
+                  
+                  {!isConnected && sessionId ? (
+                    <p className="text-zinc-400 text-sm flex items-center">
+                      <svg className="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Waiting for connection...
+                    </p>
+                  ) : !sessionId ? (
+                    <p className="text-zinc-400 text-sm">Click "Start Indexing" to begin</p>
+                  ) : null}
+                  
+                  {isConnected && messages.length > 0 && (
+                    <div className="space-y-2">
+                      {messages.map((msg, idx) => (
+                        <div key={idx} className="bg-zinc-900/50 rounded-lg p-3 border border-zinc-800/50">
+                          <p className="text-zinc-300 text-sm">{msg.message || msg.step || 'Processing...'}</p>
+                          {msg.progress !== undefined && (
+                            <div className="mt-2 h-2 bg-zinc-700 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-violet-600 transition-all duration-300" 
+                                style={{ width: `${msg.progress}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Project Directory Viewer */}
+            {repository.is_indexed && repository.files && Object.keys(repository.files).length > 0 && (
+              <div className="card p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    Project Directory
+                  </h3>
+                  <button
+                    onClick={() => setShowDirectory(!showDirectory)}
+                    className="text-zinc-400 hover:text-white transition-colors"
+                  >
+                    {showDirectory ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {showDirectory && (
+                  <ProjectDirectoryViewer
+                    files={repository.files}
+                    onFileClick={(filePath, content) => {
+                      setSelectedFile(filePath);
+                      setSelectedFileContent(content);
+                    }}
+                    className="max-h-96 overflow-auto"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Selected File Viewer */}
+            {selectedFile && (
+              <div className="card p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">{selectedFile}</h3>
+                  <button
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setSelectedFileContent(null);
+                    }}
+                    className="text-zinc-400 hover:text-white transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="bg-zinc-900 rounded-lg p-4 overflow-auto max-h-96">
+                  <pre className="text-sm text-zinc-300 whitespace-pre-wrap">
+                    {selectedFileContent || '(Binary file)'}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {/* Mode Toggle */}
+            <div className="flex space-x-2 mb-6">
               <button
-                onClick={handleStartIndexing}
-                disabled={isIndexing}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setMode('ask')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  mode === 'ask'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-zinc-800/50 text-zinc-400 hover:text-white border border-zinc-700/50'
+                }`}
               >
-                {isIndexing ? 'Indexing...' : 'Start Indexing'}
+                Ask Questions
               </button>
-            )}
-            
-            <button
-              onClick={handleDelete}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Delete Repository
-            </button>
-          </div>
-        </div>
+              <button
+                onClick={() => setMode('editor')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  mode === 'editor'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-zinc-800/50 text-zinc-400 hover:text-white border border-zinc-700/50'
+                }`}
+              >
+                Code Editor
+              </button>
+            </div>
 
-        {/* Indexing Progress */}
-        {isIndexing && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 border border-slate-200 dark:border-slate-700 mb-8">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
-              Indexing Progress
-            </h2>
-            
-            {!isConnected && (
-              <p className="text-slate-600 dark:text-slate-300 mb-4">
-                Connecting to progress stream...
-              </p>
-            )}
-
-            {messages.length > 0 && (
-              <div className="space-y-3">
-                {messages.map((msg, index) => (
-                  <div key={index} className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {msg.step || msg.type}
-                      </span>
-                      {msg.progress !== undefined && (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                          {Math.round(msg.progress)}%
-                        </span>
+            {/* Chat Interface */}
+            <div className="card flex flex-col h-[600px]">
+              {/* Messages */}
+              <div className="flex-1 overflow-auto p-6 space-y-4">
+                {conversation.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-zinc-800/50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-zinc-700/50">
+                      <svg className="w-8 h-8 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                    </div>
+                    <p className="text-zinc-400">
+                      {mode === 'ask' 
+                        ? 'Ask questions about your codebase to understand its structure and functionality'
+                        : 'Describe changes you want to make to your codebase'
+                      }
+                    </p>
+                  </div>
+                ) : (
+                  conversation.map((msg, idx) => (
+                    <div key={idx}>
+                      <div
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
+                      >
+                        <div
+                          className={`max-w-2xl rounded-2xl px-4 py-3 ${
+                            msg.role === 'user'
+                              ? 'bg-violet-600 text-white'
+                              : 'bg-zinc-800/50 text-zinc-200 border border-zinc-700/50'
+                          }`}
+                        >
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      </div>
+                      {mode === 'editor' && msg.editedFiles && Object.keys(msg.editedFiles).length > 0 && (
+                        <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 ml-auto mr-auto max-w-2xl">
+                          <div className="mb-3">
+                            <h4 className="text-sm font-semibold text-white">Edited Files</h4>
+                          </div>
+                          <div className="space-y-3">
+                            {Object.entries(msg.editedFiles).map(([filePath, content]) => (
+                              <div key={filePath} className="bg-zinc-900/50 rounded-lg p-3">
+                                <div className="mb-2">
+                                  <span className="text-xs text-violet-400 font-mono font-semibold">{filePath}</span>
+                                </div>
+                                <pre className="text-sm text-zinc-300 whitespace-pre-wrap max-h-96 overflow-auto">
+                                  {content}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
-                    {msg.message && (
-                      <p className="text-sm text-slate-600 dark:text-slate-400">
-                        {msg.message}
-                      </p>
-                    )}
-                    {msg.type === 'complete' && (
-                      <div className="mt-2">
-                        <div className="text-green-600 dark:text-green-400 text-sm mb-2">
-                          ✓ Indexing completed successfully
-                        </div>
-                        <button
-                          onClick={() => {
-                            setIsIndexing(false);
-                            loadRepository();
-                          }}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                        >
-                          View Repository
-                        </button>
+                  ))
+                )}
+                {isProcessing && (
+                  <div className="flex justify-start">
+                    <div className="bg-zinc-800/50 rounded-2xl px-4 py-3 border border-zinc-700/50">
+                      <div className="flex space-x-2">
+                        <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                        <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {wsError && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mt-4">
-                <p className="text-red-600 dark:text-red-300 text-sm">
-                  {wsError}
-                </p>
-                <button
-                  onClick={clearError}
-                  className="mt-2 text-sm text-red-700 dark:text-red-400 hover:underline"
-                >
-                  Clear Error
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Question Answering Section */}
-        {repository.is_indexed && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 border border-slate-200 dark:border-slate-700">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
-              Ask About This Codebase
-            </h2>
-            
-            {!qaMode ? (
-              <form onSubmit={handleQuestionSubmit}>
-                <div className="mb-4">
-                  <textarea
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    placeholder="Ask a question about this codebase..."
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:text-white"
-                    rows={4}
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                >
-                  Ask Question
-                </button>
-              </form>
-            ) : (
-              <div>
-                <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-4 mb-4">
-                  <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
-                    Your question:
-                  </p>
-                  <p className="text-slate-900 dark:text-white font-medium">
-                    {question}
-                  </p>
-                </div>
-
-                {messages.length > 0 && (
-                  <div className="space-y-3">
-                    {messages.map((msg, index) => (
-                      <div key={index} className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {msg.step || msg.type}
-                          </span>
-                        </div>
-                        {msg.message && (
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
-                            {msg.message}
-                          </p>
-                        )}
-                        {msg.type === 'complete' && msg.result?.answer && (
-                          <div className="mt-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-3">
-                            <p className="text-sm text-slate-900 dark:text-white">
-                              {msg.result.answer}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    </div>
                   </div>
                 )}
-
-                <button
-                  onClick={() => {
-                    setQaMode(false);
-                    setQuestion('');
-                    setAnswer('');
-                    setSessionId(null);
-                  }}
-                  className="mt-4 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  Ask Another Question
-                </button>
               </div>
-            )}
+
+              {/* Input */}
+              <div className="p-6 border-t border-zinc-800/50">
+                <form onSubmit={mode === 'ask' ? handleAskSubmit : handleEditorSubmit}>
+                  <div className="flex space-x-3">
+                    <input
+                      type="text"
+                      value={mode === 'ask' ? question : editorPrompt}
+                      onChange={(e) => mode === 'ask' ? setQuestion(e.target.value) : setEditorPrompt(e.target.value)}
+                      placeholder={mode === 'ask' ? 'Ask a question about your codebase...' : 'Describe the changes you want to make...'}
+                      className="input-field flex-1"
+                      disabled={isProcessing}
+                    />
+                    <button
+                      type="submit"
+                      disabled={isProcessing || (mode === 'ask' ? !question.trim() : !editorPrompt.trim())}
+                      className="btn-primary px-6"
+                    >
+                      {isProcessing ? (
+                        <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* Metadata */}
+            <div className="mt-8 flex items-center space-x-8 text-sm text-zinc-500">
+              <div className="flex items-center space-x-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Created: {new Date(repository.created_at).toLocaleDateString()}</span>
+              </div>
+              {repository.last_indexed_at && (
+                <div className="flex items-center space-x-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Last Indexed: {new Date(repository.last_indexed_at).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

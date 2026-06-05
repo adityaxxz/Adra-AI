@@ -225,8 +225,18 @@ class BackgroundTaskManager:
             # Step 1: Setup
             await reporter.step("setup", "Setting up repository context")
             from agent.tools import set_project_root
+            from pathlib import Path
+            
+            # Check if repo_path exists
+            if not Path(repo_path).exists():
+                error_msg = f"Repository path does not exist: {repo_path}"
+                print(error_msg)
+                await reporter.error(error_msg)
+                return {"success": False, "error": error_msg, "task_id": task_id}
+            
             set_project_root(repo_path)
             set_active_collection(collection_name)
+            print(f"Question answering setup complete for: {repo_path}")
             
             # Step 2: Search relevant code
             await reporter.step("searching", "Searching relevant code segments")
@@ -234,6 +244,10 @@ class BackgroundTaskManager:
             # Step 3: Run agent
             await reporter.step("agent_execution", "Running question answering agent")
             await reporter.agent_update("question_answering_agent", "started")
+            
+            print(f"Starting question answering agent with prompt: {user_prompt}")
+            print(f"Repository path: {repo_path}")
+            print(f"Collection name: {collection_name}")
             
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
@@ -245,11 +259,23 @@ class BackgroundTaskManager:
                 recursion_limit
             )
             
+            print(f"Question answering agent completed. Result: {result}")
+            
             # Step 4: Complete
             await reporter.step("complete", "Question answered successfully")
             await reporter.agent_update("question_answering_agent", "completed")
             
             answer = result.get("answer", "No answer generated")
+            print(f"Question answering result: {result}")
+            print(f"Extracted answer: {answer}")
+            print(f"Answer length: {len(answer) if answer else 0}")
+            
+            # Send the answer via WebSocket with multiple formats for frontend compatibility
+            # Format 1: Progress message with step="answer"
+            await reporter.update("answer", answer)
+            
+            # Format 2: Complete message with answer in result
+            await reporter.complete({"answer": answer, "message": answer})
             
             return {
                 "success": True,
