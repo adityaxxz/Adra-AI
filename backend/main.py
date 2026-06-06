@@ -18,6 +18,7 @@ import io
 import shutil
 import logging
 import tempfile
+import traceback
 
 from backend.auth import (
     oauth_callback, GoogleOAuth, GitHubOAuth, get_current_user,
@@ -313,6 +314,8 @@ async def delete_project(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a project."""
+    print(f"Delete request for project: {project_id}")
+    
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -322,15 +325,42 @@ async def delete_project(
     project = result.scalar_one_or_none()
     
     if not project:
+        print(f"Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
     
-    await db.delete(project)
-    await db.commit()
+    print(f"Deleting project: {project.name}")
     
-    return {"message": "Project deleted successfully"}
+    try:
+        # First, delete all sessions that reference this project
+        # This resolves the foreign key constraint issue
+        sessions_result = await db.execute(
+            select(Session).where(Session.project_id == project_id)
+        )
+        sessions = sessions_result.scalars().all()
+        print(f"Found {len(sessions)} sessions to delete")
+        
+        for session in sessions:
+            await db.delete(session)
+            print(f"Deleted session: {session.id}")
+        
+        await db.commit()
+        
+        # Now delete the project
+        await db.delete(project)
+        await db.commit()
+        
+        print(f"Project deleted successfully: {project_id}")
+        return {"message": "Project deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting project: {str(e)}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete project: {str(e)}"
+        )
 
 
 @app.get("/projects/{project_id}/download")
@@ -473,13 +503,51 @@ async def get_repository(
         )
     
     # Get files structure if repository is local
+    # Filter to only show supported files (same as scanner)
+    SUPPORTED_EXTENSIONS = {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".jsx": "javascript",
+        ".html": "html",
+        ".css": "css",
+        ".md": "markdown",
+        ".json": "json",
+    }
+    
+    IGNORE_DIRS = {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        "dist",
+        "build",
+        ".next",
+        "lib",
+    }
+    
     files = {}
     if repository.local_path and os.path.exists(repository.local_path):
         try:
             for root, dirs, filenames in os.walk(repository.local_path):
+                # Filter out ignored directories
+                dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+                
                 for filename in filenames:
+                    # Skip hidden files
+                    if filename.startswith('.'):
+                        continue
+                    
                     file_path = os.path.join(root, filename)
                     relative_path = os.path.relpath(file_path, repository.local_path)
+                    
+                    # Check if file extension is supported
+                    file_ext = os.path.splitext(filename)[1].lower()
+                    if file_ext not in SUPPORTED_EXTENSIONS:
+                        continue
+                    
                     try:
                         with open(file_path, 'r', encoding='utf-8') as f:
                             files[relative_path] = f.read()
@@ -528,21 +596,51 @@ async def index_repository_endpoint(
             detail="Repository not found"
         )
     
-    # Determine repo path
-    repo_path = repository.url if repository.url else repository.local_path
-    
-    if not repo_path:
+    # Determine repo path - prioritize local path for local repos
+    if repository.local_path:
+        repo_path = repository.local_path
+    elif repository.url:
+        # Clone GitHub repositories to local path if needed
+        if repository.url.startswith('http'):
+            from agent.repository.service import clone_github_repo
+            repo_name = repository.url.split('/')[-1].replace('.git', '')
+            local_repo_path = f"./temp_repos/{repo_name}"
+            # Ensure temp_repos directory exists
+            os.makedirs("./temp_repos", exist_ok=True)
+            try:
+                repo_path = clone_github_repo(repository.url, local_repo_path)
+                print(f"Cloned repository to: {repo_path}")
+                # Update the repository's local_path in the database
+                repository.local_path = repo_path
+                await db.commit()
+            except Exception as e:
+                print(f"Failed to clone repository: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to clone repository: {str(e)}"
+                )
+        else:
+            repo_path = repository.url
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Repository URL or local path must be provided"
         )
     
     # Start background indexing task
-    task_result = await task_manager.index_repository_task(
-        session_id=session_id,
-        repo_path=repo_path,
-        collection_name=repository.collection_name
-    )
+    try:
+        task_result = await task_manager.index_repository_task(
+            session_id=session_id,
+            repo_path=repo_path,
+            collection_name=repository.collection_name
+        )
+    except Exception as e:
+        print(f"Error during indexing task: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Indexing failed: {str(e)}"
+        )
     
     # Update repository status
     if task_result["success"]:
@@ -551,6 +649,12 @@ async def index_repository_endpoint(
         repository.chunks_count = task_result["stats"].chunks_created
         repository.last_indexed_at = datetime.utcnow()
         await db.commit()
+    else:
+        # Return the error from the background task
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=task_result.get("error", "Indexing failed")
+        )
     
     return task_result
 
@@ -790,7 +894,34 @@ async def start_generation(
                 detail="Repository not found"
             )
         
-        repo_path = repository.url if repository.url else repository.local_path
+        # Determine repo path - prioritize local path for local repos
+        if repository.local_path:
+            repo_path = repository.local_path
+        elif repository.url:
+            # Clone GitHub repositories to local path if needed
+            if repository.url.startswith('http'):
+                from agent.repository.service import clone_github_repo
+                repo_name = repository.url.split('/')[-1].replace('.git', '')
+                local_repo_path = f"./temp_repos/{repo_name}"
+                # Ensure temp_repos directory exists
+                os.makedirs("./temp_repos", exist_ok=True)
+                try:
+                    repo_path = clone_github_repo(repository.url, local_repo_path)
+                    print(f"Cloned repository to: {repo_path}")
+                except Exception as e:
+                    print(f"Failed to clone repository: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to clone repository: {str(e)}"
+                    )
+            else:
+                repo_path = repository.url
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Repository URL or local path must be provided"
+            )
+        
         task_result = await task_manager.execute_repository_editing(
             session_id=session_id,
             user_prompt=request.prompt,

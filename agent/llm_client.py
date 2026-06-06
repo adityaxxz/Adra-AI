@@ -6,8 +6,15 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
-
 load_dotenv()
+
+
+#################################### MODELS ################################
+
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
+# llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
+
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -49,9 +56,6 @@ def get_stats() -> dict:
     return {"api_calls": call_count, "min_interval_sec": MIN_INTERVAL_SEC}
 
 
-#! MODELS
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-# llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
 
 
 def structured_invoke(schema: Type[T], prompt: str) -> T:

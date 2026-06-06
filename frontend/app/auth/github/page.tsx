@@ -23,13 +23,20 @@ export default function GitHubLogin() {
   }, [router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden">
+      {/* Background gradient effect */}
+      <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
+      
+      <div className="card p-8 max-w-md w-full mx-4 relative z-10">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-white mb-2">
             Connecting to GitHub...
           </h2>
+          <p className="text-zinc-400 text-sm">
+            Please wait while we redirect you to GitHub's sign-in page
+          </p>
         </div>
       </div>
     </div>

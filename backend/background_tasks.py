@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent.graph import project_generation_agent, repository_editing_agent, question_answering_agent
 from agent.repository.service import index_repository, clone_github_repo
 from backend.websocket_manager import ProgressReporter
-from backend.services.vector_store import set_active_collection
+from agent.repository.vector_store import set_active_collection
 
 
 class BackgroundTaskManager:
@@ -44,14 +44,14 @@ class BackgroundTaskManager:
             reporter.set_total_steps(5)
             
             # Step 1: Initialize
-            await reporter.step("initialization", "Initializing project generation environment")
+            await reporter.step("initialization", "...")
             
             # Import and setup
             from agent.tools import set_project_root, init_project_root
             init_project_root()
             
             # Step 2: Run agent
-            await reporter.step("agent_execution", "Running project generation agent")
+            await reporter.step("agent_execution", "...")
             await reporter.agent_update("project_generation_agent", "started")
             
             # Run the agent in a thread pool since it's synchronous
@@ -65,17 +65,17 @@ class BackgroundTaskManager:
             )
             
             # Step 3: Integration fixes
-            await reporter.step("integration", "Applying integration fixes")
+            await reporter.step("integration", "...")
             fixes = result.get("integration_fixes", 0)
             if fixes:
                 await reporter.update("integration", f"Applied {fixes} integration fix(es)")
             
             # Step 4: Collect files
-            await reporter.step("collecting_files", "Collecting generated project files")
+            await reporter.step("collecting_files", "...")
             files = self._collect_project_files(project_root)
             
             # Step 5: Complete
-            await reporter.step("complete", "Project generation completed successfully")
+            await reporter.step("complete", "...")
             await reporter.agent_update("project_generation_agent", "completed")
             
             return {
@@ -133,17 +133,17 @@ class BackgroundTaskManager:
             reporter.set_total_steps(5)
             
             # Step 1: Setup
-            await reporter.step("setup", "Setting up repository context")
+            await reporter.step("setup", "...")
             from agent.tools import set_project_root
             set_project_root(repo_path)
             set_active_collection(collection_name)
             
             # Step 2: Index if needed
-            await reporter.step("indexing", "Checking repository index")
+            await reporter.step("indexing", "...")
             # Indexing is assumed to be done beforehand
             
             # Step 3: Run agent
-            await reporter.step("agent_execution", "Running repository editing agent")
+            await reporter.step("agent_execution", "...")
             await reporter.agent_update("repository_editing_agent", "started")
             
             loop = asyncio.get_event_loop()
@@ -157,11 +157,11 @@ class BackgroundTaskManager:
             )
             
             # Step 4: Collect changes
-            await reporter.step("collecting_changes", "Collecting file changes")
+            await reporter.step("collecting_changes", "...")
             changes = result.get("changes", {})
             
             # Step 5: Complete
-            await reporter.step("complete", "Repository editing completed")
+            await reporter.step("complete", "...")
             await reporter.agent_update("repository_editing_agent", "completed")
             
             return {
@@ -223,7 +223,7 @@ class BackgroundTaskManager:
             reporter.set_total_steps(4)
             
             # Step 1: Setup
-            await reporter.step("setup", "Setting up repository context")
+            await reporter.step("setup", "...")
             from agent.tools import set_project_root
             from pathlib import Path
             
@@ -239,7 +239,7 @@ class BackgroundTaskManager:
             print(f"Question answering setup complete for: {repo_path}")
             
             # Step 2: Search relevant code
-            await reporter.step("searching", "Searching relevant code segments")
+            await reporter.step("searching", "...")
             
             # Step 3: Run agent
             await reporter.step("agent_execution", "Running question answering agent")
@@ -262,7 +262,7 @@ class BackgroundTaskManager:
             print(f"Question answering agent completed. Result: {result}")
             
             # Step 4: Complete
-            await reporter.step("complete", "Question answered successfully")
+            await reporter.step("complete", "...")
             await reporter.agent_update("question_answering_agent", "completed")
             
             answer = result.get("answer", "No answer generated")
@@ -270,11 +270,7 @@ class BackgroundTaskManager:
             print(f"Extracted answer: {answer}")
             print(f"Answer length: {len(answer) if answer else 0}")
             
-            # Send the answer via WebSocket with multiple formats for frontend compatibility
-            # Format 1: Progress message with step="answer"
-            await reporter.update("answer", answer)
-            
-            # Format 2: Complete message with answer in result
+            # Send the answer via WebSocket
             await reporter.complete({"answer": answer, "message": answer})
             
             return {

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { projectsAPI, generationAPI } from '../../../api-client';
 import { useWebSocket } from '../../../websocket-hook';
 import { FilePreview } from '../../../file-preview';
+import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 
 interface Project {
   id: string;
@@ -31,6 +32,9 @@ export default function ProjectPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [showDirectory, setShowDirectory] = useState(true);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
 
   // WebSocket connection for real-time progress
   const { isConnected, messages, latestMessage, error, clearError } = useWebSocket(
@@ -47,15 +51,33 @@ export default function ProjectPage() {
     loadProject();
   }, [projectId]);
 
+  // Auto-refresh project data when generation completes via WebSocket
+  useEffect(() => {
+    if (latestMessage && (latestMessage.type === 'complete' || latestMessage.step === 'complete')) {
+      console.log('Generation completed, refreshing project data...');
+      loadProject();
+      setIsGenerating(false);
+    }
+  }, [latestMessage]);
+
   const loadProject = async () => {
     try {
       const data = await projectsAPI.getProject(projectId);
       setProject(data);
       
-      // If project is in progress, try to get the session
+      // If project is in progress, set generating state and try to connect to session
       if (data.status === 'in_progress') {
-        // We might need to fetch the session or set up a different mechanism
-        // For now, we'll skip this
+        setIsGenerating(true);
+        // Try to get recent session for this project
+        try {
+          const sessions = await generationAPI.listSessions(10);
+          const projectSession = sessions.find((s: any) => s.project_id === projectId);
+          if (projectSession) {
+            setSessionId(projectSession.session_id);
+          }
+        } catch (error) {
+          console.log('Could not fetch session for in-progress project');
+        }
       }
     } catch (error) {
       console.error('Failed to load project:', error);
@@ -87,33 +109,35 @@ export default function ProjectPage() {
     }
   };
 
-  const handleDownload = async () => {
+  const handleDelete = async () => {
     if (!project) return;
+    
+    if (!confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+      return;
+    }
 
     try {
-      const blob = await projectsAPI.downloadProject(project.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${project.name}-project.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to download project:', error);
-      alert('Failed to download project. Please try again.');
+      console.log('Deleting project:', project.id);
+      await projectsAPI.deleteProject(project.id);
+      console.log('Project deleted successfully');
+      router.push('/dashboard');
+    } catch (error: any) {
+      console.error('Failed to delete project:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to delete project. Please try again.';
+      alert(`Error: ${errorMessage}`);
     }
   };
 
-  const handleDownloadSingleFile = (filePath: string, content: string | null) => {
-    if (content === null) return;
+  const handleCopyToClipboard = async () => {
+    if (!selectedFileContent) return;
     
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filePath.split('/').pop() || 'file';
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      await navigator.clipboard.writeText(selectedFileContent);
+      alert('File content copied to clipboard!');
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      alert('Failed to copy to clipboard. Please try again.');
+    }
   };
 
   if (loading) {
@@ -148,8 +172,8 @@ export default function ProjectPage() {
       <aside className="w-64 glass-effect border-r border-zinc-800/50 flex flex-col">
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
-            <div className="w-9 h-9 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/25">
-              <span className="text-white font-bold text-sm">A</span>
+            <div className="w-9 h-9 flex items-center justify-center">
+              <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
             </div>
             <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
               Adra-AI
@@ -216,14 +240,22 @@ export default function ProjectPage() {
                   </button>
                 )}
                 
-                {project.status === 'completed' && (
+                {project.status === 'failed' && (
                   <button
-                    onClick={handleDownload}
+                    onClick={handleStartGeneration}
+                    disabled={isGenerating}
                     className="btn-primary"
                   >
-                    Download Files
+                    {isGenerating ? 'Regenerating...' : 'Regenerate'}
                   </button>
                 )}
+                
+                <button
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-600/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-600/20 transition-colors"
+                >
+                  Delete Project
+                </button>
               </div>
             </div>
 
@@ -298,44 +330,68 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {/* Files Section */}
+          {/* Project Directory Viewer */}
           {project.status === 'completed' && project.files && Object.keys(project.files).length > 0 && (
-            <div className="card p-8">
-              <h2 className="text-xl font-semibold text-white mb-6 flex items-center">
-                <svg className="w-5 h-5 mr-3 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-                Generated Files ({Object.keys(project.files).length})
-              </h2>
-              
-              <div className="space-y-3">
-                {Object.entries(project.files).map(([filePath, content], idx) => (
-                  <div key={idx} className="bg-zinc-800/50 rounded-lg border border-zinc-700/50 overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/50">
-                      <div className="flex items-center space-x-3">
-                        <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="text-sm text-zinc-300 font-medium">{filePath}</span>
-                      </div>
-                      <button
-                        onClick={() => handleDownloadSingleFile(filePath, content)}
-                        className="text-zinc-400 hover:text-white transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="p-4">
-                      <div className="bg-zinc-900 rounded-lg p-4 overflow-auto max-h-96">
-                        <pre className="text-sm text-zinc-300 whitespace-pre-wrap">
-                          {content || '(Binary file)'}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            <div className="card p-8 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-white flex items-center">
+                  <svg className="w-5 h-5 mr-3 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  Project Directory ({Object.keys(project.files).length} files)
+                </h2>
+                <button
+                  onClick={() => setShowDirectory(!showDirectory)}
+                  className="text-zinc-400 hover:text-white transition-colors text-sm"
+                >
+                  {showDirectory ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {showDirectory && (
+                <ProjectDirectoryViewer
+                  files={project.files}
+                  onFileClick={(filePath, content) => {
+                    setSelectedFile(filePath);
+                    setSelectedFileContent(content);
+                  }}
+                  className="max-h-96 overflow-auto"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Selected File Viewer */}
+          {selectedFile && (
+            <div className="card p-8 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-white">{selectedFile}</h2>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleCopyToClipboard}
+                    className="text-zinc-400 hover:text-white transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setSelectedFileContent(null);
+                    }}
+                    className="text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="bg-zinc-900 rounded-lg p-6 overflow-auto max-h-[600px]">
+                <pre className="text-sm text-zinc-300 whitespace-pre-wrap">
+                  {selectedFileContent || '(Binary file)'}
+                </pre>
               </div>
             </div>
           )}

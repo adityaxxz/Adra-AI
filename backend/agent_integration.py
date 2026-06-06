@@ -276,8 +276,26 @@ class AgentIntegration:
         if not repository:
             raise ValueError(f"Repository {repository_id} not found")
         
-        # Determine repo path
-        repo_path = repository.url if repository.url else repository.local_path
+        # Determine repo path - prioritize local path for local repos
+        if repository.local_path:
+            repo_path = repository.local_path
+        elif repository.url:
+            # Clone GitHub repositories to local path if needed
+            if repository.url.startswith('http'):
+                repo_name = repository.url.split('/')[-1].replace('.git', '')
+                local_repo_path = f"./temp_repos/{repo_name}"
+                # Ensure temp_repos directory exists
+                os.makedirs("./temp_repos", exist_ok=True)
+                try:
+                    repo_path = clone_github_repo(repository.url, local_repo_path)
+                    print(f"Cloned repository to: {repo_path}")
+                except Exception as e:
+                    print(f"Failed to clone repository: {e}")
+                    raise ValueError(f"Failed to clone repository: {str(e)}")
+            else:
+                repo_path = repository.url
+        else:
+            raise ValueError("Repository URL or local path must be provided")
         
         return {
             "repository_id": repository.id,

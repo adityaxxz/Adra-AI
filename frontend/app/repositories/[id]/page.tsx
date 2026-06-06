@@ -75,6 +75,36 @@ export default function RepositoryPage() {
     }
   }, [repository]);
 
+  // Reload repository when indexing completes
+  useEffect(() => {
+    if (latestMessage && latestMessage.step === 'complete' && isIndexing) {
+      console.log('Indexing completed, reloading repository...');
+      setIsIndexing(false);
+      setSessionId(null);
+      setTimeout(() => {
+        loadRepository();
+      }, 1000);
+    }
+  }, [latestMessage, isIndexing]);
+
+  // Timeout for stuck indexing
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    if (isIndexing && sessionId) {
+      timeoutId = setTimeout(() => {
+        console.warn('Indexing timeout reached (5 minutes)');
+        setIsIndexing(false);
+        setSessionId(null);
+        alert('Indexing timed out. Please try again.');
+      }, 5 * 60 * 1000); // 5 minutes
+    }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isIndexing, sessionId]);
+
   // Process WebSocket messages based on mode
   useEffect(() => {
     if (latestMessage) {
@@ -82,6 +112,28 @@ export default function RepositoryPage() {
       console.log('Current mode:', mode);
       console.log('Message type:', latestMessage.type);
       console.log('Message step:', latestMessage.step);
+      
+      // Handle indexing progress messages (regardless of mode)
+      if (latestMessage.step === 'scanning' || latestMessage.step === 'chunking' || 
+          latestMessage.step === 'embedding' || latestMessage.step === 'indexing' ||
+          latestMessage.step === 'complete' && isIndexing) {
+        console.log('Indexing progress message:', latestMessage.message);
+        // Indexing progress is handled automatically by the WebSocket hook
+        if (latestMessage.step === 'complete') {
+          console.log('Indexing completed, reloading repository...');
+          setIsIndexing(false);
+          loadRepository();
+        }
+        return;
+      }
+      
+      // Handle indexing errors
+      if (latestMessage.type === 'error' && isIndexing) {
+        console.log('Indexing error:', latestMessage.error);
+        setIsIndexing(false);
+        alert(`Indexing failed: ${latestMessage.error || 'Unknown error'}`);
+        return;
+      }
       
       if (mode === 'ask') {
         // Handle question answering responses - simplified for local repos
@@ -137,7 +189,7 @@ export default function RepositoryPage() {
         }
       }
     }
-  }, [latestMessage, mode]);
+  }, [latestMessage, mode, isIndexing]);
 
   const loadRepository = async () => {
     try {
@@ -154,17 +206,29 @@ export default function RepositoryPage() {
     if (!repository) return;
 
     try {
+      console.log('Starting indexing for repository:', repositoryId);
       setIsIndexing(true);
-      const newSessionId = `indexing-${Date.now()}`;
+      const newSessionId = `indexing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log('Generated session ID:', newSessionId);
       setSessionId(newSessionId);
       
-      await repositoriesAPI.indexRepository(repositoryId, newSessionId);
+      // Clear previous messages
+      clearError();
+      
+      // Give WebSocket time to connect
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const response = await repositoriesAPI.indexRepository(repositoryId, newSessionId);
+      console.log('Indexing started successfully:', response);
       
       // The indexing will run in the background
       // We'll monitor progress via WebSocket
     } catch (error: any) {
       console.error('Failed to start indexing:', error);
+      console.error('Error details:', error.response?.data);
       setIsIndexing(false);
+      setSessionId(null);
+      alert(`Failed to start indexing: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
     }
   };
 
@@ -186,6 +250,18 @@ export default function RepositoryPage() {
       console.error('Failed to delete repository:', error);
       console.error('Error details:', error.response?.data);
       alert(`Failed to delete repository: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleCopyToClipboard = async () => {
+    if (!selectedFileContent) return;
+    
+    try {
+      await navigator.clipboard.writeText(selectedFileContent);
+      alert('File content copied to clipboard!');
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      alert('Failed to copy to clipboard. Please try again.');
     }
   };
 
@@ -291,8 +367,8 @@ export default function RepositoryPage() {
       <aside className="w-64 glass-effect border-r border-zinc-800/50 flex flex-col">
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
-            <div className="w-9 h-9 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/25">
-              <span className="text-white font-bold text-sm">A</span>
+            <div className="w-9 h-9 flex items-center justify-center">
+              <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
             </div>
             <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
               Adra-AI
@@ -401,7 +477,8 @@ export default function RepositoryPage() {
                       <svg className="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Waiting for connection...
+                      Connecting to real-time updates...
+                      {wsError && <span className="text-red-400 ml-2">({wsError})</span>}
                     </p>
                   ) : !sessionId ? (
                     <p className="text-zinc-400 text-sm">Click "Start Indexing" to begin</p>
@@ -411,7 +488,16 @@ export default function RepositoryPage() {
                     <div className="space-y-2">
                       {messages.map((msg, idx) => (
                         <div key={idx} className="bg-zinc-900/50 rounded-lg p-3 border border-zinc-800/50">
-                          <p className="text-zinc-300 text-sm">{msg.message || msg.step || 'Processing...'}</p>
+                          <p className="text-zinc-300 text-sm">
+                            {msg.step === 'scanning' && '📂 Scanning repository files...'}
+                            {msg.step === 'chunking' && '✂️ Processing and chunking files...'}
+                            {msg.step === 'embedding' && '🔮 Generating embeddings...'}
+                            {msg.step === 'indexing' && '💾 Indexing in vector database...'}
+                            {msg.step === 'complete' && '✅ Indexing completed!'}
+                            {(!msg.step || 
+                              !['scanning', 'chunking', 'embedding', 'indexing', 'complete'].includes(msg.step)) 
+                              && (msg.message || 'Processing...')}
+                          </p>
                           {msg.progress !== undefined && (
                             <div className="mt-2 h-2 bg-zinc-700 rounded-full overflow-hidden">
                               <div 
@@ -423,6 +509,15 @@ export default function RepositoryPage() {
                         </div>
                       ))}
                     </div>
+                  )}
+                  
+                  {isConnected && messages.length === 0 && (
+                    <p className="text-zinc-400 text-sm flex items-center">
+                      <svg className="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Starting indexing...
+                    </p>
                   )}
                 </div>
               )}
@@ -463,15 +558,26 @@ export default function RepositoryPage() {
               <div className="card p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-white">{selectedFile}</h3>
-                  <button
-                    onClick={() => {
-                      setSelectedFile(null);
-                      setSelectedFileContent(null);
-                    }}
-                    className="text-zinc-400 hover:text-white transition-colors"
-                  >
-                    Close
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={handleCopyToClipboard}
+                      className="text-zinc-400 hover:text-white transition-colors"
+                      title="Copy to clipboard"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setSelectedFileContent(null);
+                      }}
+                      className="text-zinc-400 hover:text-white transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-zinc-900 rounded-lg p-4 overflow-auto max-h-96">
                   <pre className="text-sm text-zinc-300 whitespace-pre-wrap">

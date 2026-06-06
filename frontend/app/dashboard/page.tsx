@@ -149,8 +149,8 @@ export default function Dashboard() {
       <aside className="w-64 glass-effect border-r border-zinc-800/50 flex flex-col">
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
-            <div className="w-9 h-9 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/25">
-              <span className="text-white font-bold text-sm">A</span>
+            <div className="w-9 h-9 flex items-center justify-center">
+              <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
             </div>
             <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
               Adra-AI
@@ -499,8 +499,6 @@ export default function Dashboard() {
                       className="input-field w-full"
                     >
                       <option value="github">GitHub</option>
-                      <option value="gitlab">GitLab</option>
-                      <option value="bitbucket">Bitbucket</option>
                     </select>
                   </div>
                 </>

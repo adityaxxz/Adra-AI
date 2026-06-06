@@ -43,24 +43,31 @@ function GoogleCallbackContent() {
   }, [searchParams, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden">
+      {/* Background gradient effect */}
+      <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
+      
+      <div className="card p-8 max-w-md w-full mx-4 relative z-10">
         {status === 'loading' && (
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto mb-4"></div>
+            <h2 className="text-xl font-semibold text-white mb-2">
               Signing in with Google...
             </h2>
+            <p className="text-zinc-400 text-sm">
+              Please wait while we complete your sign-in
+            </p>
           </div>
         )}
 
         {status === 'success' && (
           <div className="text-center">
-            <div className="text-green-600 text-5xl mb-4">✓</div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+            <div className="text-green-500 text-5xl mb-4">✓</div>
+            <h2 className="text-xl font-semibold text-white mb-2">
               Successfully signed in!
             </h2>
-            <p className="text-slate-600 dark:text-slate-300">
+            <p className="text-zinc-400 text-sm">
               Redirecting to dashboard...
             </p>
           </div>
@@ -68,14 +75,14 @@ function GoogleCallbackContent() {
 
         {status === 'error' && (
           <div className="text-center">
-            <div className="text-red-600 text-5xl mb-4">✕</div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+            <div className="text-red-500 text-5xl mb-4">✕</div>
+            <h2 className="text-xl font-semibold text-white mb-2">
               Authentication Failed
             </h2>
-            <p className="text-slate-600 dark:text-slate-300 mb-4">{error}</p>
+            <p className="text-zinc-400 text-sm mb-4">{error}</p>
             <button
-              onClick={() => router.push('/')}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              onClick={() => router.push('/auth/signin')}
+              className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-medium rounded-lg transition-all duration-200"
             >
               Try Again
             </button>
@@ -89,8 +96,11 @@ function GoogleCallbackContent() {
 export default function GoogleCallback() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden">
+        {/* Background gradient effect */}
+        <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 relative z-10"></div>
       </div>
     }>
       <GoogleCallbackContent />
