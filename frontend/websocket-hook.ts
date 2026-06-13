@@ -21,6 +21,10 @@ export const useWebSocket = (sessionId: string, userId: string) => {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    // Clear messages and error on session change
+    setMessages([]);
+    setError(null);
+
     // Only connect if we have a valid session ID
     if (!sessionId) {
       console.log('WebSocket: No session ID provided, skipping connection');

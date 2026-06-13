@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { authAPI } from '../../../../api-client';
 
@@ -9,8 +9,14 @@ function GoogleCallbackContent() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState('');
+  // Guard against React StrictMode double-invocation: OAuth codes are one-time use.
+  // Without this, the second effect call sends the already-consumed code and gets a 400.
+  const hasRun = useRef(false);
 
   useEffect(() => {
+    if (hasRun.current) return;
+    hasRun.current = true;
+
     const handleCallback = async () => {
       const code = searchParams.get('code');
       
@@ -29,11 +35,16 @@ function GoogleCallbackContent() {
         
         setStatus('success');
         
-        // Redirect to dashboard after a short delay
-        setTimeout(() => {
-          router.push('/dashboard');
-        }, 1000);
+        // Redirect to dashboard immediately
+        router.push('/dashboard');
       } catch (err: any) {
+        // If we already have a token stored, the first run succeeded —
+        // this is the StrictMode second run hitting the expired code. Just redirect.
+        const existingToken = localStorage.getItem('token');
+        if (existingToken) {
+          router.push('/dashboard');
+          return;
+        }
         setStatus('error');
         setError(err.message || 'Authentication failed');
       }
@@ -43,7 +54,7 @@ function GoogleCallbackContent() {
   }, [searchParams, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden select-none cursor-default">
       {/* Background gradient effect */}
       <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
@@ -96,7 +107,7 @@ function GoogleCallbackContent() {
 export default function GoogleCallback() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden">
+      <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden select-none cursor-default">
         {/* Background gradient effect */}
         <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
