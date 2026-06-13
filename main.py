@@ -14,7 +14,7 @@ def main():
     # Initialize default project root for project generation mode
     init_project_root()
     
-    parser = argparse.ArgumentParser(description="Adra-AI: Project generator and repository-aware AI software engineer")
+    parser = argparse.ArgumentParser(description="Adra-AI: Project generator and repository-aware AI coding assistant")
     parser.add_argument("--recursion-limit", "-r", type=int, default=100,
                         help="Recursion limit for processing (default: 100)")
     parser.add_argument("--repo", type=str, default=None,

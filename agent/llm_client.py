@@ -2,10 +2,10 @@ import os
 import time
 import threading
 from typing import Type, TypeVar
-from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
+from dotenv import load_dotenv
 load_dotenv()
 
 

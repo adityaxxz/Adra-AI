@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -48,8 +49,21 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://adrai:adrai_passw
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+
+# Lifespan event handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan events."""
+    # Startup
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    # Shutdown
+    await engine.dispose()
+
+
 # FastAPI app
-app = FastAPI(title="Adra-AI API", version="1.0.0")
+app = FastAPI(title="Adra-AI API", version="1.0.0", lifespan=lifespan)
 
 # Configure rate limiting
 # TEMPORARILY DISABLED FOR TESTING
@@ -75,20 +89,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# Database lifecycle
-@app.on_event("startup")
-async def startup():
-    """Initialize database tables on startup."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    """Clean up on shutdown."""
-    await engine.dispose()
 
 
 # Dependency: Database session
@@ -763,11 +763,18 @@ async def upload_folder(
     try:
         # Process uploaded files
         for file in files:
-            # Construct the file path
-            file_path = os.path.join(upload_dir, file.filename)
+            # file.filename is the webkitRelativePath: "folder-name/subdir/file.css"
+            # Strip the leading folder component so files land directly in upload_dir
+            path_parts = file.filename.replace('\\', '/').split('/')
+            relative_path = '/'.join(path_parts[1:]) if len(path_parts) > 1 else file.filename
+            
+            # Construct the file path without the top-level folder prefix
+            file_path = os.path.join(upload_dir, relative_path)
             
             # Create directories if needed
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            file_dir = os.path.dirname(file_path)
+            if file_dir:
+                os.makedirs(file_dir, exist_ok=True)
             
             # Write the file content
             with open(file_path, 'wb') as f:

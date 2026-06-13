@@ -170,18 +170,31 @@ export default function RepositoryPage() {
         }
       } else if (mode === 'editor') {
         // Handle editor mode responses
-        if (latestMessage.data && latestMessage.data.edited_files) {
+        if (latestMessage.type === 'complete') {
+          // The completion message carries result.edited_files
+          const result = latestMessage.result || {};
+          const editedFiles: Record<string, string> = result.edited_files || {};
+          const message = result.message || latestMessage.message || 'Editing complete.';
+          
           setConversation(prev => [...prev, { 
             role: 'assistant', 
-            content: latestMessage.message || `Edited ${Object.keys(latestMessage.data.edited_files).length} file(s)`,
-            editedFiles: latestMessage.data.edited_files
+            content: message,
+            editedFiles: Object.keys(editedFiles).length > 0 ? editedFiles : undefined
           }]);
           setIsProcessing(false);
-        } else if (latestMessage.type === 'complete' || latestMessage.step === 'complete') {
-          // Handle completion message
-          const content = latestMessage.message || latestMessage.data?.message || 'Task completed';
-          setConversation(prev => [...prev, { role: 'assistant', content: String(content) }]);
-          setIsProcessing(false);
+          
+          if (Object.keys(editedFiles).length > 0) {
+            // Method 1: Instantly merge edited files into repository.files state
+            // so Project Directory updates immediately without a network round-trip
+            setRepository(prev => prev ? {
+              ...prev,
+              files: { ...(prev.files || {}), ...editedFiles }
+            } : prev);
+            
+            // Method 2: Also re-fetch from backend after a short delay to catch
+            // any additional files the integrator may have touched on disk
+            setTimeout(() => loadRepository(), 1500);
+          }
         } else if (latestMessage.type === 'error') {
           console.log('Error message received:', latestMessage.error);
           setConversation(prev => [...prev, { role: 'assistant', content: `Error: ${latestMessage.error || 'Unknown error'}` }]);
@@ -317,17 +330,26 @@ export default function RepositoryPage() {
       setIsProcessing(true);
       setConversation(prev => [...prev, { role: 'user', content: editorPrompt }]);
       
+      // Generate session_id FIRST and set it so WebSocket connects before the API call
+      const newSessionId = `edit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log('Generated editor session ID:', newSessionId);
+      setSessionId(newSessionId);
+      
+      // Give WebSocket time to connect before the API call fires
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const response = await generationAPI.startGeneration({
         prompt: editorPrompt,
         mode: 'editing',
         repository_id: repository.id,
-        recursion_limit: 100
+        recursion_limit: 100,
+        session_id: newSessionId
       });
-
-      setSessionId(response.session_id);
+      
+      console.log('Editor generation response:', response);
       setEditorPrompt('');
       
-      // We'll monitor the answer via WebSocket
+      // Result also comes via WebSocket complete message — handled in the effect above
     } catch (error: any) {
       console.error('Failed to submit edit request:', error);
       setIsProcessing(false);
@@ -368,7 +390,7 @@ export default function RepositoryPage() {
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
             <div className="w-9 h-9 flex items-center justify-center">
-              <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
+              <img src="/logo.png" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
             </div>
             <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
               Adra-AI
@@ -646,21 +668,35 @@ export default function RepositoryPage() {
                         </div>
                       </div>
                       {mode === 'editor' && msg.editedFiles && Object.keys(msg.editedFiles).length > 0 && (
-                        <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 ml-auto mr-auto max-w-2xl">
-                          <div className="mb-3">
-                            <h4 className="text-sm font-semibold text-white">Edited Files</h4>
-                          </div>
-                          <div className="space-y-3">
-                            {Object.entries(msg.editedFiles).map(([filePath, content]) => (
-                              <div key={filePath} className="bg-zinc-900/50 rounded-lg p-3">
-                                <div className="mb-2">
-                                  <span className="text-xs text-violet-400 font-mono font-semibold">{filePath}</span>
+                        <div className="mt-2 mb-4 mx-auto max-w-2xl">
+                          <div className="bg-gradient-to-r from-violet-900/30 to-indigo-900/20 rounded-xl border border-violet-500/20 overflow-hidden">
+                            <div className="flex items-center gap-2 px-4 py-3 border-b border-violet-500/20">
+                              <svg className="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              <span className="text-sm font-semibold text-violet-300">
+                                Edited {Object.keys(msg.editedFiles).length} file{Object.keys(msg.editedFiles).length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <div className="p-4 space-y-3">
+                              {Object.entries(msg.editedFiles).map(([filePath, content]) => (
+                                <div key={filePath} className="bg-zinc-900/70 rounded-lg overflow-hidden border border-zinc-700/50">
+                                  <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/60 border-b border-zinc-700/50">
+                                    <span className="text-xs text-violet-400 font-mono font-semibold truncate">{filePath}</span>
+                                    <button
+                                      onClick={() => { setSelectedFile(filePath); setSelectedFileContent(content); }}
+                                      className="text-xs text-zinc-400 hover:text-violet-300 transition-colors ml-2 shrink-0"
+                                      title="Open in file viewer"
+                                    >
+                                      Open ↗
+                                    </button>
+                                  </div>
+                                  <pre className="text-xs text-zinc-300 whitespace-pre-wrap max-h-64 overflow-auto p-3 leading-relaxed">
+                                    {content || '(empty)'}
+                                  </pre>
                                 </div>
-                                <pre className="text-sm text-zinc-300 whitespace-pre-wrap max-h-96 overflow-auto">
-                                  {content}
-                                </pre>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}

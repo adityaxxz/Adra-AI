@@ -38,6 +38,7 @@ class SearchResult(BaseModel):
     score: float
 
 
+#Stats for indexing operations
 class IndexingStats(BaseModel):
     files_scanned: int = 0
     files_skipped: int = 0

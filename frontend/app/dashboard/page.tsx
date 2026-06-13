@@ -107,11 +107,13 @@ export default function Dashboard() {
     input.onchange = async (e) => {
       const files = (e.target as HTMLInputElement).files;
       if (files && files.length > 0) {
-        const folderName = (files[0] as any).webkitRelativePath.split('/')[0];
+        // Use the folder name from disk as fallback only if user didn't provide a name
+        const diskFolderName = (files[0] as any).webkitRelativePath.split('/')[0];
+        const repositoryName = newRepo.name.trim() || diskFolderName;
         
         try {
           // Upload files to server (this now creates the repository automatically)
-          const uploadResult = await repositoriesAPI.uploadFolder(files, folderName);
+          const uploadResult = await repositoriesAPI.uploadFolder(files, repositoryName);
           
           setShowNewRepo(false);
           setNewRepo({ name: '', url: '', local_path: '', provider: 'github' });
@@ -150,7 +152,7 @@ export default function Dashboard() {
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
             <div className="w-9 h-9 flex items-center justify-center">
-              <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
+              <img src="/logo.png" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
             </div>
             <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
               Adra-AI

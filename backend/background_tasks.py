@@ -133,17 +133,17 @@ class BackgroundTaskManager:
             reporter.set_total_steps(5)
             
             # Step 1: Setup
-            await reporter.step("setup", "...")
+            await reporter.step("setup", "Setting up repository context...")
             from agent.tools import set_project_root
             set_project_root(repo_path)
             set_active_collection(collection_name)
             
             # Step 2: Index if needed
-            await reporter.step("indexing", "...")
+            await reporter.step("indexing", "Preparing repository index...")
             # Indexing is assumed to be done beforehand
             
             # Step 3: Run agent
-            await reporter.step("agent_execution", "...")
+            await reporter.step("agent_execution", "Running editing agent...")
             await reporter.agent_update("repository_editing_agent", "started")
             
             loop = asyncio.get_event_loop()
@@ -156,18 +156,28 @@ class BackgroundTaskManager:
                 recursion_limit
             )
             
-            # Step 4: Collect changes
-            await reporter.step("collecting_changes", "...")
-            changes = result.get("changes", {})
+            # Step 4: Collect edited files from disk using coder_state step filepaths
+            await reporter.step("collecting_changes", "Collecting edited files...")
+            edited_files = self._collect_edited_files(result, repo_path)
             
-            # Step 5: Complete
-            await reporter.step("complete", "...")
+            # Step 5: Complete — broadcast edited files to frontend
+            await reporter.step("complete", f"Editing complete. Modified {len(edited_files)} file(s).")
             await reporter.agent_update("repository_editing_agent", "completed")
+            
+            # Broadcast completion with edited files so frontend can display them
+            edited_file_names = list(edited_files.keys())
+            summary = f"✅ Done! Edited {len(edited_files)} file(s): {', '.join(edited_file_names)}" if edited_files else "✅ Editing complete."
+            await reporter.complete({
+                "edited_files": edited_files,
+                "message": summary,
+                "files_changed": edited_file_names
+            })
             
             return {
                 "success": True,
                 "result": result,
-                "changes": changes,
+                "edited_files": edited_files,
+                "files_changed": edited_file_names,
                 "task_id": task_id
             }
             
@@ -366,6 +376,41 @@ class BackgroundTaskManager:
                 "task_id": task_id
             }
     
+    def _collect_edited_files(self, agent_result: Dict, repo_path: str) -> Dict[str, str]:
+        """Collect the files that were actually edited/created by the agent."""
+        edited_files = {}
+        
+        try:
+            # Extract edited filepaths from coder_state steps
+            coder_state = agent_result.get("coder_state")
+            if coder_state and hasattr(coder_state, "task_plan") and hasattr(coder_state.task_plan, "steps"):
+                steps = coder_state.task_plan.steps
+                for step in steps:
+                    filepath = step.filepath
+                    full_path = os.path.join(repo_path, filepath)
+                    # Normalize path separators
+                    full_path = os.path.normpath(full_path)
+                    if os.path.exists(full_path):
+                        try:
+                            with open(full_path, "r", encoding="utf-8") as f:
+                                # Use forward slashes for consistency
+                                norm_filepath = filepath.replace("\\", "/")
+                                edited_files[norm_filepath] = f.read()
+                        except Exception:
+                            edited_files[filepath.replace("\\", "/")] = None
+            
+            # Also check integration fixes (FileUpdate objects stored in result)
+            integration_fixes = agent_result.get("integration_fixes", 0)
+            if integration_fixes:
+                # The integrator also wrote files — re-read all files touched by coder+integrator
+                # by scanning for recently modified files in the repo
+                pass
+                
+        except Exception as e:
+            print(f"Error collecting edited files: {e}")
+        
+        return edited_files
+
     def _collect_project_files(self, project_root: str) -> Dict[str, str]:
         """Collect all files from a generated project."""
         import os

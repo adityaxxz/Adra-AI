@@ -2,7 +2,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, Set
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class ConnectionManager:
@@ -24,7 +24,7 @@ class ConnectionManager:
         self.active_connections[session_id].add(websocket)
         self.session_metadata[session_id] = {
             "user_id": user_id,
-            "connected_at": datetime.utcnow().isoformat(),
+            "connected_at": datetime.now(timezone.utc).isoformat(),
             "connection_count": len(self.active_connections[session_id])
         }
         
@@ -32,7 +32,7 @@ class ConnectionManager:
         await self.send_personal_message({
             "type": "connected",
             "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
     
     def disconnect(self, websocket: WebSocket, session_id: str):
@@ -76,7 +76,7 @@ class ConnectionManager:
             "session_id": session_id,
             "step": step,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         if progress is not None:
@@ -90,7 +90,7 @@ class ConnectionManager:
             "type": "error",
             "session_id": session_id,
             "error": error,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
     
     async def broadcast_complete(self, session_id: str, result: dict = None):
@@ -98,7 +98,7 @@ class ConnectionManager:
         message = {
             "type": "complete",
             "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         if result:
@@ -113,7 +113,7 @@ class ConnectionManager:
             "session_id": session_id,
             "agent": agent_name,
             "status": status,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         if data:

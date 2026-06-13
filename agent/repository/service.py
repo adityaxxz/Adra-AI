@@ -7,11 +7,13 @@ from agent.repository.retriever import retrieve
 from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection
 from agent.repository.models import IndexingStats
 
+#! Orchestration layer for repo aware RAG
 
 def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset: bool = False) -> IndexingStats:
     """
     Scan a repository, chunk files, generate embeddings and store them in ChromaDB.
     Implements incremental indexing with file hashing.
+    Force full re-indexing if `reset` is True. (default: False)
     """
     set_active_collection(collection_name)
 

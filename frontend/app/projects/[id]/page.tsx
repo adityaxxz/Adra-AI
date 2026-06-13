@@ -173,7 +173,7 @@ export default function ProjectPage() {
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
             <div className="w-9 h-9 flex items-center justify-center">
-              <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
+              <img src="/logo.png" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
             </div>
             <Link href="/dashboard" className="text-xl font-bold text-white tracking-tight">
               Adra-AI

@@ -11,7 +11,7 @@ export default function SignInPage() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-3">
               <div className="w-9 h-9 flex items-center justify-center">
-                <img src="/imageinverted.jpg" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
+                <img src="/logo.png" alt="Adra-AI Logo" className="w-9 h-9 rounded-xl object-contain" />
               </div>
               <Link href="/" className="text-xl font-bold text-white tracking-tight">
                 Adra-AI

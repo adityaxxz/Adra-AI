@@ -5,7 +5,7 @@ from datetime import datetime
 import uuid
 
 
-# Integration layer for connecting existing agent pipeline with database storage. This module bridges the gap between the original CLI-based agents and the new SaaS architecture.
+#! Integration layer for connecting existing agent pipeline with database storage. This module bridges the gap between the original CLI-based agents and the new SaaS architecture.
 
 # Add parent directory to path for importing agent modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
