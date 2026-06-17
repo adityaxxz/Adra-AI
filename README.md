@@ -1,6 +1,6 @@
 # Adra-AI
 
-[![Live Site](https://img.shields.io/badge/Live%20Demo-https%3A%2F%2Fadra--ai.vercel.app-brightgreen?style=for-the-badge&logo=vercel)](https://adra-ai.vercel.app)
+[![Live](https://img.shields.io/badge/Live-https%3A%2F%2Fadra--ai.vercel.app-blue?style=for-the-badge&logo=vercel)](https://adra-ai.vercel.app)
 
 A multi-agent coding assistant SaaS platform that turns natural-language prompts into working codebases or edits existing repositories. Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and LangChain, Adra-AI features a modern web application with real-time updates and operates in three modes:
 
