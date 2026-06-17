@@ -21,7 +21,8 @@
     "@hookform/resolvers": "^3.6.0",
     "lucide-react": "^0.400.0",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.3.0"
+    "tailwind-merge": "^2.3.0",
+    "ogl": "^1.0.11"
   },
   "devDependencies": {
     "typescript": "^5.5.3",
