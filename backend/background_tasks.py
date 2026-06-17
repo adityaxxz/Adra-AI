@@ -77,6 +77,10 @@ class BackgroundTaskManager:
             # Step 5: Complete
             await reporter.step("complete", "...")
             await reporter.agent_update("project_generation_agent", "completed")
+            await reporter.complete({
+                "files": files,
+                "message": "Project generation completed successfully!"
+            })
             
             return {
                 "success": True,

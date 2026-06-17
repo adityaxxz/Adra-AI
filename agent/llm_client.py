@@ -55,7 +55,7 @@ patch_google_genai_retries()
 
 #################################### MODELS ################################
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0, max_retries=0)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, max_retries=0)
 # llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
 
 
@@ -120,10 +120,8 @@ def structured_invoke(schema: Type[T], prompt: str) -> T:
         except Exception as e:
             last_error = e
             if _is_rate_limit_error(e):
-                print(f"\n[FATAL] Google GenAI Rate Limit / Resource Exhausted (429) hit: {e}")
-                print("Stopping the process immediately as requested.\n")
-                import os
-                os._exit(1)
+                print(f"\n[ERROR] Google GenAI Rate Limit / Resource Exhausted (429) hit: {e}")
+                raise
             if attempt < MAX_RETRIES - 1:
                 continue
             raise
@@ -147,10 +145,8 @@ def simple_invoke(prompt: str) -> str:
         except Exception as e:
             last_error = e
             if _is_rate_limit_error(e):
-                print(f"\n[FATAL] Google GenAI Rate Limit / Resource Exhausted (429) hit: {e}")
-                print("Stopping the process immediately as requested.\n")
-                import os
-                os._exit(1)
+                print(f"\n[ERROR] Google GenAI Rate Limit / Resource Exhausted (429) hit: {e}")
+                raise
             if attempt < MAX_RETRIES - 1:
                 continue
             raise

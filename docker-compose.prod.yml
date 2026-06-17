@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: adrai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: adrai
+      POSTGRES_USER: adrai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adrai_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adrai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: adrai-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: adrai-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override DB host to use the Docker service name
+      DATABASE_URL: postgresql+asyncpg://adrai:${POSTGRES_PASSWORD:-adrai_password}@postgres:5432/adrai
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+    volumes:
+      - ./uploaded_repos:/app/uploaded_repos
+      - ./temp_repos:/app/temp_repos
+      - ./generated_projects:/app/generated_projects
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: adrai-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  qdrant_data:

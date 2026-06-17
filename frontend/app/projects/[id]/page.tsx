@@ -92,17 +92,24 @@ export default function ProjectPage() {
     try {
       setIsGenerating(true);
       
-      const response = await generationAPI.startGeneration({
+      // Pre-generate session ID to allow WebSocket connection before generation begins
+      const newSessionId = `generation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      setSessionId(newSessionId);
+      
+      // Wait briefly for WebSocket connection to establish
+      await new Promise(r => setTimeout(r, 500));
+      
+      await generationAPI.startGeneration({
         prompt: project.prompt,
         mode: 'generation',
         project_id: project.id,
-        recursion_limit: 100
+        recursion_limit: 100,
+        session_id: newSessionId
       });
 
-      setSessionId(response.session_id);
-      
-      // The generation will run in the background
-      // We'll monitor progress via WebSocket
+      // Refresh project data to display the newly generated files
+      await loadProject();
+      setIsGenerating(false);
     } catch (error: any) {
       console.error('Failed to start generation:', error);
       setIsGenerating(false);

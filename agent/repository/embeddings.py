@@ -64,8 +64,6 @@ def embed_text(text: str) -> list[float]:
         return embeddings.embed_query(text)
     except Exception as e:
         if _is_rate_limit_error(e):
-            print(f"\n[FATAL] Google GenAI Embeddings Rate Limit / Resource Exhausted (429) hit: {e}")
-            print("Stopping the process immediately as requested.\n")
-            import os
-            os._exit(1)
+            print(f"\n[ERROR] Google GenAI Embeddings Rate Limit / Resource Exhausted (429) hit: {e}")
+            raise
         raise

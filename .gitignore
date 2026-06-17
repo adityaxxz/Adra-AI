@@ -14,12 +14,13 @@ ARCHITECTURE_DECISIONS.md
 generated_projects
 
 temp_repos
+uploaded_repos
+chroma_db
 generated_project
 generated_project_tic_tac_toe
 generated_project_blog_api_using_fastapi_and_sqlite
 DEPLOYMENT.md
-
-
+adraai.md
 
 # =========================
 # IDE

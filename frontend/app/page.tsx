@@ -33,13 +33,6 @@ export default function Home() {
           >
             Sign In
           </Link>
-          <Link
-            href="/auth/signin"
-            className="btn-primary text-sm"
-            id="get-started-nav"
-          >
-            Get Started Free
-          </Link>
         </div>
       </nav>
 

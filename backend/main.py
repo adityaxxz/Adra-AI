@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional, List
 from pydantic import BaseModel, ValidationError
@@ -20,6 +20,10 @@ import shutil
 import logging
 import tempfile
 import traceback
+
+# Load Admin Emails from environment variable (case-insensitive check)
+ADMIN_EMAILS_RAW = os.getenv("ADMIN_EMAILS", "")
+ADMIN_EMAILS = {email.strip().lower() for email in ADMIN_EMAILS_RAW.split(",") if email.strip()}
 
 from backend.auth import (
     oauth_callback, GoogleOAuth, GitHubOAuth, get_current_user,
@@ -82,9 +86,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # CORS middleware
+# Read allowed origins from env so production locks to the Vercel domain
+_frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+_allowed_origins = [_frontend_url, "http://localhost:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -221,6 +228,18 @@ async def create_project(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new project."""
+    # Enforce limit of 1 project for non-admin users to prevent API key exhaustion
+    user_email = current_user.get("email", "").lower()
+    if user_email not in ADMIN_EMAILS:
+        stmt = select(func.count(Project.id)).where(Project.user_id == current_user["sub"])
+        result = await db.execute(stmt)
+        project_count = result.scalar()
+        if project_count >= 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Limit exceeded: Non-admin users are only allowed to create 1 project."
+            )
+            
     project_id = str(uuid.uuid4())
     
     db_project = Project(
@@ -424,6 +443,34 @@ async def create_repository(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new repository."""
+    # Enforce repo limits for non-admin users (1 local repo and 1 github/url repo)
+    user_email = current_user.get("email", "").lower()
+    if user_email not in ADMIN_EMAILS:
+        if repository.provider == "local":
+            stmt = select(func.count(Repository.id)).where(
+                Repository.user_id == current_user["sub"],
+                Repository.provider == "local"
+            )
+            result = await db.execute(stmt)
+            local_count = result.scalar()
+            if local_count >= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Limit exceeded: Non-admin users are only allowed 1 local repository."
+                )
+        else:
+            stmt = select(func.count(Repository.id)).where(
+                Repository.user_id == current_user["sub"],
+                Repository.provider != "local"
+            )
+            result = await db.execute(stmt)
+            github_count = result.scalar()
+            if github_count >= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Limit exceeded: Non-admin users are only allowed 1 GitHub repository."
+                )
+
     repo_id = str(uuid.uuid4())
     collection_name = f"repo_{repo_id.replace('-', '_')}"
     
@@ -662,13 +709,17 @@ async def index_repository_endpoint(
 @app.delete("/repositories/{repository_id}")
 async def delete_repository(
     repository_id: str,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a repository."""
-    print(f"Delete request for repository: {repository_id}")
+    print(f"Delete request for repository: {repository_id} by user: {current_user['sub']}")
     
     result = await db.execute(
-        select(Repository).where(Repository.id == repository_id)
+        select(Repository).where(
+            Repository.id == repository_id,
+            Repository.user_id == current_user["sub"]
+        )
     )
     repository = result.scalar_one_or_none()
     
@@ -730,22 +781,6 @@ async def delete_repository(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete repository: {str(e)}"
         )
-    
-    if not repository:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found"
-        )
-    
-    # Delete Qdrant collection
-    from backend.services.vector_store import get_vector_store
-    vector_store = get_vector_store()
-    vector_store.clear_collection(repository.collection_name)
-    
-    await db.delete(repository)
-    await db.commit()
-    
-    return {"message": "Repository deleted successfully"}
 
 
 @app.post("/upload-folder")
@@ -756,6 +791,21 @@ async def upload_folder(
     db: AsyncSession = Depends(get_db)
 ):
     """Upload a local folder and create a repository."""
+    # Enforce limit of 1 local repo for non-admin users
+    user_email = current_user.get("email", "").lower()
+    if user_email not in ADMIN_EMAILS:
+        stmt = select(func.count(Repository.id)).where(
+            Repository.user_id == current_user["sub"],
+            Repository.provider == "local"
+        )
+        result = await db.execute(stmt)
+        local_count = result.scalar()
+        if local_count >= 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Limit exceeded: Non-admin users are only allowed 1 local repository upload."
+            )
+
     # Create a permanent directory to store uploaded files
     upload_dir = os.path.join("uploaded_repos", f"{current_user['sub']}_{repository_name}_{int(datetime.utcnow().timestamp())}")
     os.makedirs(upload_dir, exist_ok=True)
@@ -881,6 +931,15 @@ async def start_generation(
                 project.status = ProjectStatus.COMPLETED
                 project.integration_fixes = task_result.get("integration_fixes", 0)
                 project.completed_at = datetime.utcnow()
+                await db.commit()
+        elif not task_result["success"] and request.project_id:
+            result = await db.execute(
+                select(Project).where(Project.id == request.project_id)
+            )
+            project = result.scalar_one_or_none()
+            if project:
+                project.status = ProjectStatus.FAILED
+                project.error_message = task_result.get("error", "Unknown error occurred during generation")
                 await db.commit()
     
     elif request.mode == SessionMode.EDITING:
