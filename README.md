@@ -185,8 +185,8 @@ flowchart LR
 | Database | PostgreSQL 16 |
 | Vector Store | Qdrant 1.12.0 |
 | Orchestration | LangGraph, LangChain |
-| LLM (default) | Groq (`openai/gpt-oss-120b`) |
-| LLM (optional) | Google Gemini 2.5 Flash |
+| LLM (default) | Google Gemini 2.5 Flash |
+| LLM (optional) | Groq (`openai/gpt-oss-120b`) |
 | Authentication | OAuth 2.0 (Google, GitHub) |
 | Real-time | WebSockets |
 | Deployment | Docker, Docker Compose |
@@ -562,7 +562,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - see [LICENSE](LICENSE) file for details
 
 ## Acknowledgments
 
