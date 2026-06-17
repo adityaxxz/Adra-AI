@@ -195,17 +195,9 @@ flowchart LR
 
 ## Prerequisites
 
-### For Web Application (Docker)
 - Docker and Docker Compose
 - OAuth credentials (Google and/or GitHub)
-- LLM API keys (Groq, Google, or other supported providers)
-
-### For CLI Usage
-- Python **3.12+**
-- An API key for your chosen LLM provider:
-  - **Groq** (default): [Groq Console](https://console.groq.com/)
-  - **Google Gemini** (optional): [Google AI Studio](https://aistudio.google.com/apikey)
-- Git (for GitHub repository cloning)
+- LLM API keys (Google Gemini, Groq, or other supported providers)
 
 ## Installation
 
@@ -222,36 +214,7 @@ cd Adra-AI
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials:
-```env
-# Database Configuration
-DATABASE_URL=postgresql://adrai:adrai_password@localhost:5432/adrai
-
-# Qdrant Vector Database
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
-
-# Security
-SECRET_KEY=your-secret-key-change-in-production-min-32-characters
-
-# OAuth Configuration
-GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id
-GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
-GITHUB_OAUTH_CLIENT_ID=your-github-oauth-client-id
-GITHUB_OAUTH_CLIENT_SECRET=your-github-oauth-client-secret
-
-# Frontend URL for OAuth callbacks
-FRONTEND_URL=http://localhost:3000
-
-# API Configuration
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id
-NEXT_PUBLIC_GITHUB_OAUTH_CLIENT_ID=your-github-oauth-client-id
-
-# LLM Configuration
-GROQ_API_KEY=your-groq-api-key
-GOOGLE_API_KEY=your-google-api-key
-```
+Open `.env` and fill in your credentials. Refer to [.env.example](.env.example) for descriptions of each environment variable.
 
 3. Start all services:
 ```bash
@@ -269,142 +232,26 @@ This will start:
 - Backend API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
 
-### Option B — CLI Usage (uv recommended)
-
-Install [uv](https://docs.astral.sh/uv/) first, then:
-
-```bash
-git clone https://github.com/adityaxxz/Adra-AI.git
-cd Adra-AI
-
-uv venv
-.\.venv\Scripts\Activate.ps1  # On Windows
-source .venv/bin/activate  # On Linux/Mac
-
-uv sync
-```
-
-Or with pip:
-
-```bash
-git clone https://github.com/adityaxxz/Adra-AI.git
-cd Adra-AI
-
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1  # On Windows
-source .venv/bin/activate  # On Linux/Mac
-
-pip install -r requirements.txt
-```
-
-Configure CLI-only environment:
-```env
-GROQ_API_KEY="your-groq-api-key"
-GOOGLE_API_KEY="your-google-api-key"
-
-LLM_MIN_INTERVAL_SEC=2.1
-LLM_MAX_RETRIES=5
-LLM_MAX_CONTENT_CHARS=10000
-```
-
 ## Usage
 
 ### Web Application
+1. **Authenticate**: Sign in with Google or GitHub OAuth.
+2. **Create Project**: Use the UI to generate new projects.
+3. **Connect Repository**: Add and index repositories for editing or Q&A.
+4. **Track Progress**: Follow real-time generation logs via WebSockets.
 
-1. **Authenticate**: Sign in with Google or GitHub OAuth
-2. **Create Project**: Use the project generation mode to create new projects
-3. **Connect Repository**: Add repositories for editing or question answering
-4. **Track Progress**: Real-time updates via WebSocket during generation
-5. **Manage Projects**: View, download, or delete generated projects
-
-### CLI - Project Generation Mode
-
-Run the CLI and enter a project description:
-
-```bash
-python main.py
-```
-
-Example prompts:
-
-```text
-Create a simple to-do list web application using HTML, CSS, and JavaScript
-Create a simple calculator web application.
-Create a simple blog API in FastAPI with a SQLite database.
-Create a tic-tac-toe game with HTML, CSS, and JavaScript.
-```
-
-Optional flags:
-
-```bash
-python main.py --recursion-limit 100
-python main.py -r 150
-```
-
-### CLI - Repository-Aware Editing Mode
-
-Edit an existing local repository:
-
-```bash
-python main.py --repo /path/to/your/repository
-```
-
-Clone and edit a GitHub repository:
-
-```bash
-python main.py --github https://github.com/username/repository
-```
-
-Specify a custom collection name for the vector store:
-
-```bash
-python main.py --repo /path/to/repo --collection my-custom-collection
-```
-
-Example prompts for repository editing:
-
-```text
-Add user authentication to this FastAPI application
-Add error handling to all API endpoints
-Refactor the database layer to use async operations
-Add unit tests for the user service module
-```
-
-### CLI - Question Answering Mode
-
-Ask questions about a repository without making changes:
-
-```bash
-python main.py --repo /path/to/repository --question
-```
-
-Example questions:
-
-```text
-How does the authentication system work in this codebase?
-What is the purpose of the UserService class?
-How are API endpoints structured in this application?
-```
+### CLI Usage
+For running Adra-AI locally via the command-line interface without the web application, see the [CLI Usage Guide](cli_usage.md).
 
 ## OAuth Setup
 
-### Google OAuth
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing
-3. Enable Google+ API
-4. Create OAuth 2.0 credentials
-5. Add authorized redirect URIs:
-   - Local development: `http://localhost:3000/auth/google/callback`
-   - Production: `https://adra-ai.vercel.app/auth/google/callback`
-6. Copy Client ID and Client Secret to `.env`
-
-### GitHub OAuth
-1. Go to GitHub Settings → Developer settings → OAuth Apps
-2. Create a new OAuth App
-3. Set Authorization callback URLs:
-   - Local development: `http://localhost:3000/auth/github/callback`
-   - Production: `https://adra-ai.vercel.app/auth/github/callback`
-4. Copy Client ID and Client Secret to `.env`
+To configure authentication:
+1. **Google OAuth**: Generate credentials in the [Google Cloud Console](https://console.cloud.google.com/).
+2. **GitHub OAuth**: Create a new OAuth App in GitHub Developer settings.
+3. Configure the redirect URIs in your developer console:
+   - Local development: `http://localhost:3000/auth/[google|github]/callback`
+   - Production: `https://adra-ai.vercel.app/auth/[google|github]/callback`
+4. Add the generated credentials to your `.env` file.
 
 ## Advanced Repository Features
 
@@ -429,24 +276,14 @@ The system uses language-specific chunking strategies:
 
 ## API Documentation
 
-Once the backend is running, access the interactive API documentation at:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+Once the backend is running, the interactive Swagger UI API documentation is available at `http://localhost:8000/docs`.
 
-### Main API Endpoints
-
+Key endpoints include:
 - `POST /projects` - Create a new project
-- `GET /projects` - List user's projects
-- `GET /projects/{id}` - Get project details
-- `POST /repositories` - Add a repository
-- `GET /repositories` - List user's repositories
 - `POST /repositories/{id}/index` - Index a repository
-- `POST /generate` - Start code generation
-- `WS /ws/{session_id}` - WebSocket for real-time updates
+- `WS /ws/{session_id}` - WebSocket for real-time progress updates
 
-## Deployment
-
-For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
+## 🚀 Deployment 
 
 ### Live Production Architecture
 The live project is fully deployed and configured using:
