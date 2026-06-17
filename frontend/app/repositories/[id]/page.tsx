@@ -154,7 +154,7 @@ function RepositoryPageInner() {
     lastProcessedMsgRef.current = latestMessage;
 
     // Indexing messages
-    if (['scanning','chunking','embedding','indexing'].includes(latestMessage.step)) return;
+    if (['scanning','chunking','embedding','indexing'].includes(latestMessage.step ?? '')) return;
     if (latestMessage.step === 'complete' && isIndexing) {
       setIsIndexing(false);
       loadRepository();
@@ -478,7 +478,7 @@ function RepositoryPageInner() {
                       {messages[messages.length - 1].step === 'embedding' && '🔮 Generating embeddings…'}
                       {messages[messages.length - 1].step === 'indexing' && '💾 Storing in vector DB…'}
                       {messages[messages.length - 1].step === 'complete' && '✅ Done!'}
-                      {messages[messages.length - 1].message && !['scanning','chunking','embedding','indexing','complete'].includes(messages[messages.length - 1].step)
+                      {messages[messages.length - 1].message && !['scanning','chunking','embedding','indexing','complete'].includes(messages[messages.length - 1].step ?? '')
                         && messages[messages.length - 1].message}
                     </p>
                   )}
