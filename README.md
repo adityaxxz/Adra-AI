@@ -1,5 +1,7 @@
 # Adra-AI
 
+[![Live Site](https://img.shields.io/badge/Live%20Demo-https%3A%2F%2Fadra--ai.vercel.app-brightgreen?style=for-the-badge&logo=vercel)](https://adra-ai.vercel.app)
+
 A multi-agent coding assistant SaaS platform that turns natural-language prompts into working codebases or edits existing repositories. Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and LangChain, Adra-AI features a modern web application with real-time updates and operates in three modes:
 
 1. **Project Generation** — Creates new projects from scratch using a four-stage pipeline: Planner → Architect → Coder → Integrator
@@ -391,13 +393,17 @@ How are API endpoints structured in this application?
 2. Create a new project or select existing
 3. Enable Google+ API
 4. Create OAuth 2.0 credentials
-5. Add authorized redirect URI: `http://localhost:3000/auth/google/callback`
+5. Add authorized redirect URIs:
+   - Local development: `http://localhost:3000/auth/google/callback`
+   - Production: `https://adra-ai.vercel.app/auth/google/callback`
 6. Copy Client ID and Client Secret to `.env`
 
 ### GitHub OAuth
 1. Go to GitHub Settings → Developer settings → OAuth Apps
 2. Create a new OAuth App
-3. Set Authorization callback URL: `http://localhost:3000/auth/github/callback`
+3. Set Authorization callback URLs:
+   - Local development: `http://localhost:3000/auth/github/callback`
+   - Production: `https://adra-ai.vercel.app/auth/github/callback`
 4. Copy Client ID and Client Secret to `.env`
 
 ## Advanced Repository Features
@@ -440,20 +446,21 @@ Once the backend is running, access the interactive API documentation at:
 
 ## Deployment
 
-For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)
+For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-### Quick Docker Deployment
+### Live Production Architecture
+The live project is fully deployed and configured using:
+* **Frontend**: Deployed on [Vercel](https://vercel.com) (Next.js serverless app).
+* **Backend**: Hosted on a [DigitalOcean Droplet](https://digitalocean.com) in the Bangalore (`blr1`) region, running:
+  - **Docker Compose** container network (FastAPI API, PostgreSQL, Qdrant).
+  - **Nginx** reverse proxy routing requests and handling WebSockets.
+  - **Certbot / Let's Encrypt** for automated SSL/HTTPS.
+
+### Quick Docker Deployment (Local)
 
 ```bash
 docker-compose up -d
 ```
-
-### Cloud Deployment Options
-
-- **AWS**: ECS, EC2, or App Runner
-- **DigitalOcean**: App Platform or Droplets
-- **Heroku**: Backend and frontend deployment
-- **Google Cloud**: Cloud Run or Compute Engine
 
 ## Development
 
