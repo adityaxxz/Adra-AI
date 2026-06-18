@@ -25,7 +25,6 @@ interface SidebarProps {
   activeRepoId?: string;
   activeSessionId?: string;
   onSelectSession?: (sessionId: string) => void;
-  onNewProject?: () => void;
   className?: string;
 }
 
@@ -219,7 +218,6 @@ export function Sidebar({
   activeRepoId,
   activeSessionId,
   onSelectSession,
-  onNewProject,
   className = '',
 }: SidebarProps) {
   const router = useRouter();
@@ -249,9 +247,9 @@ export function Sidebar({
           </Link>
         </div>
 
-        {/* New Chat / New Project buttons */}
-        <div className="flex gap-2">
-          {activeRepoId && onNewChat ? (
+        {/* New Chat button */}
+        {activeRepoId && onNewChat && (
+          <div className="flex gap-2">
             <button
               onClick={onNewChat}
               className="btn-primary w-full text-xs py-2"
@@ -259,16 +257,8 @@ export function Sidebar({
               <PlusIcon />
               New Chat
             </button>
-          ) : (
-            <button
-              onClick={onNewProject}
-              className="btn-primary w-full text-xs py-2"
-            >
-              <PlusIcon />
-              New Project
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="divider mx-4 my-0" />
@@ -373,8 +363,8 @@ export function Sidebar({
           <button
             onClick={handleLogout}
             title="Sign out"
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-[var(--bg-active)]"
-            style={{ color: 'var(--text-muted)' }}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-active)] transition-colors hover:text-red-400"
+            style={{ color: 'var(--text-secondary)' }}
           >
             <LogoutIcon />
           </button>

@@ -617,7 +617,7 @@ function RepositoryPageInner() {
 
             <form onSubmit={handleSubmit}>
               <div
-                className="flex items-end gap-3 rounded-2xl px-4 py-3 transition-all"
+                className="flex items-center gap-3 rounded-2xl px-4 py-3 transition-all"
                 style={{
                   background: 'var(--bg-elevated)',
                   border: `1px solid ${isProcessing ? 'var(--border-hover)' : 'var(--border)'}`,
@@ -626,7 +626,7 @@ function RepositoryPageInner() {
                 {/* Mode selector inside the chat box on the left */}
                 {isReady && (
                   <div
-                    className="flex rounded-xl p-0.5 gap-0.5 shrink-0 self-end mb-0.5"
+                    className="flex rounded-xl p-0.5 gap-0.5 shrink-0"
                     style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)' }}
                   >
                     {(['ask', 'editor'] as Mode[]).map((m) => (
@@ -681,7 +681,7 @@ function RepositoryPageInner() {
                   <SendIcon spinning={isProcessing} />
                 </button>
               </div>
-              <p className="text-[10px] text-center mt-2" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs text-center mt-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>
                 {mode === 'ask' ? 'AI answers are based on indexed code context' : 'AI will edit files across your codebase'}
               </p>
             </form>
