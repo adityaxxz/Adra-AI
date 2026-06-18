@@ -61,6 +61,8 @@ async def lifespan(app: FastAPI):
     # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        from sqlalchemy import text
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS projects_created_count INTEGER DEFAULT 0 NOT NULL;"))
     yield
     # Shutdown
     await engine.dispose()
@@ -258,11 +260,11 @@ async def create_project(
     """Create a new project."""
     # Enforce limit of 1 project for non-admin users to prevent API key exhaustion
     user_email = current_user.get("email", "").lower()
+    db_user = None
     if user_email not in ADMIN_EMAILS:
-        stmt = select(func.count(Project.id)).where(Project.user_id == current_user["sub"])
-        result = await db.execute(stmt)
-        project_count = result.scalar()
-        if project_count >= 1:
+        result = await db.execute(select(User).where(User.id == current_user["sub"]))
+        db_user = result.scalar_one_or_none()
+        if db_user and db_user.projects_created_count >= 1:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Limit exceeded: Non-admin users are only allowed to create 1 project."
@@ -281,6 +283,12 @@ async def create_project(
     )
     
     db.add(db_project)
+    
+    # Increment projects_created_count on the user object
+    if user_email not in ADMIN_EMAILS and db_user:
+        db_user.projects_created_count += 1
+        db.add(db_user)
+        
     await db.commit()
     await db.refresh(db_project)
     
