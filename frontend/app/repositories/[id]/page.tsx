@@ -421,28 +421,7 @@ function RepositoryPageInner() {
               </button>
             )}
 
-            {/* Mode toggle */}
-            {isReady && (
-              <div
-                className="flex rounded-lg p-0.5 gap-0.5"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
-              >
-                {(['ask', 'editor'] as Mode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMode(m)}
-                    id={`mode-${m}`}
-                    className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                    style={{
-                      background: mode === m ? 'var(--accent)' : 'transparent',
-                      color: mode === m ? '#fff' : 'var(--text-muted)',
-                    }}
-                  >
-                    {m === 'ask' ? 'Ask' : 'Edit'}
-                  </button>
-                ))}
-              </div>
-            )}
+
 
             {/* Delete */}
             <button
@@ -644,6 +623,29 @@ function RepositoryPageInner() {
                   border: `1px solid ${isProcessing ? 'var(--border-hover)' : 'var(--border)'}`,
                 }}
               >
+                {/* Mode selector inside the chat box on the left */}
+                {isReady && (
+                  <div
+                    className="flex rounded-xl p-0.5 gap-0.5 shrink-0 self-end mb-0.5"
+                    style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)' }}
+                  >
+                    {(['ask', 'editor'] as Mode[]).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMode(m)}
+                        id={`mode-${m}`}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                        style={{
+                          background: mode === m ? 'var(--accent)' : 'transparent',
+                          color: mode === m ? '#fff' : 'var(--text-muted)',
+                        }}
+                      >
+                        {m === 'ask' ? 'Ask' : 'Edit'}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <textarea
                   ref={textareaRef}
                   value={input}

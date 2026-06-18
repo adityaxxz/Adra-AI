@@ -26,7 +26,6 @@ interface SidebarProps {
   activeSessionId?: string;
   onSelectSession?: (sessionId: string) => void;
   onNewProject?: () => void;
-  onAddRepo?: () => void;
   className?: string;
 }
 
@@ -221,7 +220,6 @@ export function Sidebar({
   activeSessionId,
   onSelectSession,
   onNewProject,
-  onAddRepo,
   className = '',
 }: SidebarProps) {
   const router = useRouter();
@@ -317,12 +315,7 @@ export function Sidebar({
                     </span>
                   </Link>
                 ))}
-                {onNewProject && (
-                  <button onClick={onNewProject} className="sidebar-item text-violet-400 hover:text-violet-300">
-                    <PlusIcon />
-                    <span>New Project</span>
-                  </button>
-                )}
+
               </div>
             )}
           </div>
@@ -352,12 +345,7 @@ export function Sidebar({
                   repoPath={`/repositories/${repo.id}`}
                 />
               ))}
-              {onAddRepo && (
-                <button onClick={onAddRepo} className="sidebar-item text-violet-400 hover:text-violet-300">
-                  <PlusIcon />
-                  <span>Add Repository</span>
-                </button>
-              )}
+
               {repositories.length === 0 && (
                 <p className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                   No repositories yet

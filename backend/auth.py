@@ -199,19 +199,27 @@ class GitHubOAuth:
             "redirect_uri": redirect_uri
         }
         
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Adra-AI"
+        }
         async with httpx.AsyncClient() as client:
-            response = await client.post(GitHubOAuth.TOKEN_URL, data=data)
+            response = await client.post(GitHubOAuth.TOKEN_URL, data=data, headers=headers)
             response.raise_for_status()
             return response.json()
     
     @staticmethod
     async def get_user_info(access_token: str) -> OAuthUser:
         """Get user information from GitHub."""
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "Adra-AI"
+        }
         async with httpx.AsyncClient() as client:
             # Get basic user info
             response = await client.get(
                 GitHubOAuth.USER_INFO_URL,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers=headers
             )
             response.raise_for_status()
             user_data = response.json()
@@ -219,7 +227,7 @@ class GitHubOAuth:
             # Get primary email
             email_response = await client.get(
                 GitHubOAuth.USER_EMAIL_URL,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers=headers
             )
             email_response.raise_for_status()
             emails = email_response.json()

@@ -163,7 +163,6 @@ export default function Dashboard() {
         projects={projects}
         repositories={repositories}
         onNewProject={() => setShowNewProject(true)}
-        onAddRepo={() => setShowNewRepo(true)}
       />
 
       {/* Main content — offset by sidebar width */}
@@ -182,29 +181,6 @@ export default function Dashboard() {
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Manage your AI projects and repositories
             </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowNewRepo(true)}
-              className="btn-secondary text-sm"
-              id="add-repo-btn"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              Add Repo
-            </button>
-            <button
-              onClick={() => setShowNewProject(true)}
-              className="btn-primary text-sm"
-              id="new-project-btn"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Project
-            </button>
           </div>
         </header>
 

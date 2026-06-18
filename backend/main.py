@@ -195,16 +195,44 @@ async def oauth_callback_endpoint(
     user = result.scalar_one_or_none()
     
     if not user:
-        user = User(
-            id=token_data.user["id"],
-            email=token_data.user["email"],
-            name=token_data.user["name"],
-            avatar_url=token_data.user.get("avatar_url"),
-            provider=token_data.user["provider"]
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
+        # Check if user exists by email
+        email_result = await db.execute(select(User).where(User.email == token_data.user["email"]))
+        user = email_result.scalar_one_or_none()
+        
+        if not user:
+            user = User(
+                id=token_data.user["id"],
+                email=token_data.user["email"],
+                name=token_data.user["name"],
+                avatar_url=token_data.user.get("avatar_url"),
+                provider=token_data.user["provider"]
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        else:
+            # User exists with the same email but a different OAuth ID (different provider).
+            # We sign them in as the existing user and issue a new Token with the existing user's ID.
+            from backend.auth import create_access_token
+            jwt_token = create_access_token(
+                data={
+                    "sub": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "provider": user.provider
+                }
+            )
+            token_data = Token(
+                access_token=jwt_token,
+                token_type=token_data.token_type,
+                user={
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "avatar_url": user.avatar_url or token_data.user.get("avatar_url"),
+                    "provider": user.provider
+                }
+            )
     
     return token_data
 
