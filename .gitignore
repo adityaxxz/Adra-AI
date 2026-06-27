@@ -25,6 +25,10 @@ test.py
 notes.md
 cmds.txt
 agent/repository/test.py
+cmds_for_droplets
+CLAUDE.md
+backend/backend_impl.md
+
 
 # --- Environment Variables & Secrets ---
 .env

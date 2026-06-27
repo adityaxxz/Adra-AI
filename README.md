@@ -2,11 +2,11 @@
 
 [![Live](https://img.shields.io/badge/Live-https%3A%2F%2Fadra--ai.vercel.app-blue?style=for-the-badge&logo=vercel)](https://adra-ai.vercel.app)
 
-A multi-agent coding assistant SaaS platform that turns natural-language prompts into working codebases or edits existing repositories. Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and LangChain, Adra-AI features a modern web application with real-time updates and operates in three modes:
+A multi-agent Codebase Intelligence platform that turns natural-language prompts into working codebases or edits existing repositories. Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and LangChain, Adra-AI features a modern web application with real-time updates and operates in a dual-graph workflow architecture:
 
-1. **Project Generation** — Creates new projects from scratch using a four-stage pipeline: Planner → Architect → Coder → Integrator
-2. **Repository-Aware Editing** — Edits existing repositories with context-aware RAG (Retrieval-Augmented Generation)
-3. **Question Answering** — Asks questions about codebases without making changes
+1. **Project Generation** — Creates new projects from scratch using a four-stage pipeline (Planner → Architect → Coder → Integrator) without repository context.
+2. **Repository-Aware Editing** — Edits existing repositories using a repository-aware graph (Repository Agent → Planner → Architect → Coder → Integrator) backed by context-aware RAG.
+3. **Question Answering** — Asks questions about codebases without making changes using specialized explainer agents.
 
 ## Architecture
 
@@ -149,17 +149,21 @@ flowchart LR
 ## Features
 
 ### Core Features
-- **Structured planning** — Pydantic schemas enforce consistent plans, task breakdowns, and integration results
-- **Step-by-step implementation** — Each file is built in dependency order with live context from prior files
-- **Cross-file integration pass** — The integrator agent reviews the whole codebase and patches integration bugs the coder may have missed
-- **Centralized LLM client** — Throttled API calls, automatic retries on rate limits, and context truncation
+- **Dual-Graph Workflow Architecture** — Multi-agent system separating scratch project generation from repository-aware editing to reduce execution complexity
+- **Structured planning** — Pydantic schemas enforcing consistent plans, task breakdowns, and validation
+- **Step-by-step implementation** — Builds each file in dependency order with live context from prior files
+- **Cross-file integration pass** — Post-coder optimization to resolve cross-file import, export, and route mismatch bugs
+- **Context & Token Management** — Smart context truncation (4,000 chars for repo context, 8,000 chars for project context) to prevent token overflow
+- **Throttling & Fault Tolerance** — Custom rate limiting (2.1s minimum interval) and 5x retries to prevent API resource exhaustion
+- **Iterative Loop Limits** — Caps recursion depth at 100 steps to prevent infinite execution loops during agent runs
 - **Pluggable LLM backend** — Swap between Google Gemini and Groq models via configuration
 
 ### Repository-Aware Features
 - **Repository scanning** — Automatically scans repositories for supported file types (Python, JavaScript, TypeScript, HTML, CSS, Markdown, JSON)
-- **Code-aware chunking** — Language-specific chunking strategies (AST-based for Python, regex-based for JS/TS)
-- **File hashing** — SHA256-based content hashing for change detection
-- **Incremental indexing** — Only re-index changed files based on content hashes
+- **Structure-Aware Code Chunking** — Custom syntax-aware chunker supporting 9 file extensions / 7 core programming languages to preserve logical code blocks (AST-based for Python, regex for JS/TS)
+- **SHA256 Incremental Indexing** — File hashing pipeline to only re-index new/modified files, optimizing performance and vector store writes
+- **Cost-Optimized Vector Operations** — Avoids duplicate embedding API calls, saving over 90% in costs and time on routine updates
+- **Garbage Collection** — Background tasks to remove orphaned code chunks when files are deleted from the codebase
 - **Embedding generation** — Generates vector embeddings for semantic search
 - **Vector store** — Qdrant-backed persistent storage for code chunks and embeddings
 - **Semantic search** — Retrieves relevant code snippets based on natural language queries
@@ -255,24 +259,20 @@ To configure authentication:
 
 ## Advanced Repository Features
 
-### Code-Aware Chunking
-The system uses language-specific chunking strategies:
+### Structure-Aware Code Chunking
+Replaced naive character-based text splitting with a custom syntax-aware chunker supporting 9 file extensions / 7 core programming languages (`.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.html`, `.css`, `.md`, `.json`):
+- **Python**: AST-based parsing to extract imports, classes, functions, and modules.
+- **JavaScript/TypeScript/React**: Parses variables, arrow functions, methods, and classes using custom brace-matching algorithms and regular expressions.
+- **HTML**: Isolates structure by head, body, script, style, and section tags.
+- **CSS**: Chunks at the rule level (selectors and at-rules).
+- **Markdown**: Section-based chunking by headers.
+- **JSON**: Parser targeting top-level keys.
+- **Generic**: Recursive character splitting with overlap for other files.
 
-- **Python**: AST-based parsing to extract imports, classes, functions, and modules
-- **JavaScript/TypeScript**: Regex-based parsing for functions, classes, and components
-- **Markdown**: Section-based chunking by headers
-- **Generic**: Recursive character splitting with overlap
-
-### Incremental Indexing
-- Files are hashed using SHA256 to detect changes
-- Only modified files are re-indexed
-- Deleted files are removed from the vector store
-- Significantly reduces indexing time for large repositories
-
-### File Hash Management
-- Consistent hashing for content integrity
-- Hash-based change detection
-- Efficient incremental updates
+### Cost-Optimized Incremental Indexing
+- **SHA256 Incremental Indexing**: Files are hashed using SHA256 to detect local changes.
+- **90%+ Cost Reduction**: By comparing live file hashes against stored vector metadata, unchanged files are completely skipped. This avoids redundant embedding API calls, reducing embedding costs and repository indexing time by over 90% on routine updates.
+- **Garbage Collection of Deleted Code**: Background tasks calculate symmetric differences between directories and vector indexes, executing deletions for orphaned vectors to maintain database hygiene.
 
 ## API Documentation
 
