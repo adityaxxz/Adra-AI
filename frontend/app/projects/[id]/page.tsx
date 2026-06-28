@@ -26,15 +26,19 @@ export default function ProjectPage() {
   const router = useRouter();
   const params = useParams();
   const projectId = params.id as string;
-  
+
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
-  const [showDirectory, setShowDirectory] = useState(true);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [sidebarProjects, setSidebarProjects] = useState<any[]>([]);
+  const [sidebarRepos, setSidebarRepos] = useState<any[]>([]);
 
   // WebSocket connection for real-time progress
   const { isConnected, messages, latestMessage, error, clearError } = useWebSocket(
@@ -47,9 +51,21 @@ export default function ProjectPage() {
     if (userData) {
       setUser(JSON.parse(userData));
     }
-    
+
     loadProject();
+    loadSidebarData();
   }, [projectId]);
+
+  const loadSidebarData = async () => {
+    try {
+      const [p, r] = await Promise.all([
+        projectsAPI.listProjects().catch(() => []),
+        repositoriesAPI.listRepositories().catch(() => []),
+      ]);
+      setSidebarProjects(p);
+      setSidebarRepos(r);
+    } catch {}
+  };
 
   // Auto-refresh project data when generation completes via WebSocket
   useEffect(() => {
@@ -64,7 +80,7 @@ export default function ProjectPage() {
     try {
       const data = await projectsAPI.getProject(projectId);
       setProject(data);
-      
+
       // If project is in progress, set generating state and try to connect to session
       if (data.status === 'in_progress') {
         setIsGenerating(true);
@@ -91,14 +107,14 @@ export default function ProjectPage() {
 
     try {
       setIsGenerating(true);
-      
+
       // Pre-generate session ID to allow WebSocket connection before generation begins
       const newSessionId = `generation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       setSessionId(newSessionId);
-      
+
       // Wait briefly for WebSocket connection to establish
       await new Promise(r => setTimeout(r, 500));
-      
+
       await generationAPI.startGeneration({
         prompt: project.prompt,
         mode: 'generation',
@@ -116,13 +132,12 @@ export default function ProjectPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!project) return;
-    
-    if (!confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-      return;
-    }
+  const handleDelete = () => {
+    setDeleteConfirmOpen(true);
+  };
 
+  const confirmDeleteAction = async () => {
+    if (!project || deleteConfirmName !== project.name) return;
     try {
       console.log('Deleting project:', project.id);
       await projectsAPI.deleteProject(project.id);
@@ -137,7 +152,7 @@ export default function ProjectPage() {
 
   const handleCopyToClipboard = async () => {
     if (!selectedFileContent) return;
-    
+
     try {
       await navigator.clipboard.writeText(selectedFileContent);
       alert('File content copied to clipboard!');
@@ -172,7 +187,10 @@ export default function ProjectPage() {
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg-base)' }}>
       {/* Shared Sidebar */}
-      <Sidebar />
+      <Sidebar
+        projects={sidebarProjects}
+        repositories={sidebarRepos}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-auto" style={{ marginLeft: '260px' }}>
@@ -199,13 +217,12 @@ export default function ProjectPage() {
             <h1 className="text-sm font-semibold text-white truncate">{project.name}</h1>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Project</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`badge text-[10px] ${
-              project.status === 'completed' ? 'badge-green' :
-              project.status === 'in_progress' ? 'badge-blue' :
-              project.status === 'failed' ? 'badge-red' : 'badge-zinc'
-            }`}>{project.status === 'in_progress' ? 'running' : project.status}</span>
-          </div>
+          {/* <div className="flex items-center gap-2">
+            <span className={`badge text-[10px] ${project.status === 'completed' ? 'badge-green' :
+                project.status === 'in_progress' ? 'badge-blue' :
+                  project.status === 'failed' ? 'badge-red' : 'badge-zinc'
+              }`}>{project.status === 'in_progress' ? 'running' : project.status}</span>
+          </div> */}
         </header>
 
         <div className="px-8 py-8 max-w-4xl mx-auto w-full">
@@ -311,30 +328,25 @@ export default function ProjectPage() {
                   Project Files
                   <span className="badge badge-zinc">{Object.keys(project.files).length}</span>
                 </h2>
-                <button
-                  onClick={() => setShowDirectory(!showDirectory)}
-                  className="btn-ghost text-xs"
-                >
-                  {showDirectory ? 'Hide' : 'Show'}
-                </button>
+                <span className="badge badge-green text-xs font-semibold px-2.5 py-1">
+                  Completed
+                </span>
               </div>
-              {showDirectory && (
-                <div className="p-4 max-h-80 overflow-auto">
-                  <ProjectDirectoryViewer
-                    files={project.files}
-                    onFileClick={(filePath, content) => {
-                      setSelectedFile(filePath);
-                      setSelectedFileContent(content);
-                    }}
-                  />
-                </div>
-              )}
+              <div className="p-4 max-h-80 overflow-auto">
+                <ProjectDirectoryViewer
+                  files={project.files}
+                  onFileClick={(filePath, content) => {
+                    setSelectedFile(filePath);
+                    setSelectedFileContent(content);
+                  }}
+                />
+              </div>
             </div>
           )}
 
           {/* Selected File viewer — modal overlay */}
           {selectedFile && (
-            <div className="modal-overlay" onClick={() => { setSelectedFile(null); setSelectedFileContent(null); }}>
+            <div className="modal-overlay" onClick={() => { setSelectedFile(null); setSelectedFileContent(null); setCopied(false); }}>
               <div
                 className="w-full max-w-3xl rounded-2xl overflow-hidden animate-scale-in"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
@@ -344,11 +356,34 @@ export default function ProjectPage() {
                   <span className="text-sm font-mono font-semibold truncate" style={{ color: '#a78bfa' }}>{selectedFile}</span>
                   <div className="flex items-center gap-2 shrink-0 ml-3">
                     <button
-                      onClick={async () => { if (selectedFileContent) await navigator.clipboard.writeText(selectedFileContent); }}
-                      className="btn-ghost text-xs px-3 py-1.5 rounded-lg"
-                    >Copy</button>
+                      onClick={async () => {
+                        if (selectedFileContent) {
+                          await navigator.clipboard.writeText(selectedFileContent);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#a78bfa]/10 hover:bg-[#a78bfa]/20 border-[#a78bfa]/40 hover:border-[#a78bfa] text-[#a78bfa] hover:text-white"
+                    >
+                      {copied ? (
+                        <>
+                          <svg className="w-3.5 h-3.5 animate-scale-in" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                          Copy
+                        </>
+                      )}
+                    </button>
                     <button
-                      onClick={() => { setSelectedFile(null); setSelectedFileContent(null); }}
+                      onClick={() => { setSelectedFile(null); setSelectedFileContent(null); setCopied(false); }}
                       className="btn-ghost p-2 rounded-lg"
                       style={{ color: 'var(--text-muted)' }}
                     >
@@ -373,6 +408,71 @@ export default function ProjectPage() {
             {project.updated_at && <span>Updated: {new Date(project.updated_at).toLocaleDateString()}</span>}
             {project.completed_at && <span>Completed: {new Date(project.completed_at).toLocaleDateString()}</span>}
           </div>
+
+          {/* ---- GitHub-like Delete Confirmation Modal ---- */}
+          {deleteConfirmOpen && (
+            <div className="modal-overlay" onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}>
+              <div
+                className="w-full max-w-md rounded-2xl overflow-hidden animate-scale-in"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
+                  <span className="text-sm font-semibold text-white">Delete Project</span>
+                  <button
+                    onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}
+                    className="btn-ghost p-2 rounded-lg"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="p-5 flex-1 space-y-4">
+                  <p className="text-xs leading-relaxed text-[#6b6b80]">
+                    <span className="text-red-400">This action cannot  be undone.</span> <span className="text-white">This will permanently delete this project, including all its generated files.</span>
+                  </p>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-white select-text">
+                      Please type "<strong className="text-[#a78bfa]">{project.name}</strong>" to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-lg border focus:outline-none transition-all duration-150"
+                      style={{
+                        background: '#090910',
+                        borderColor: 'var(--border)',
+                        color: '#fff',
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="px-5 py-4 border-t flex justify-end gap-3" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.01)' }}>
+                  <button
+                    onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}
+                    className="btn-ghost text-xs px-4 py-2 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeleteAction}
+                    disabled={deleteConfirmName !== project.name}
+                    className={`text-xs px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${deleteConfirmName === project.name
+                        ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                        : 'bg-red-950/20 border border-red-500/20 text-red-500/35 cursor-not-allowed'
+                      }`}
+                  >
+                    I understand, delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

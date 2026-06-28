@@ -178,7 +178,7 @@ export default function Dashboard() {
           <div>
             <h1 className="text-xl font-bold text-white">Dashboard</h1>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Manage your AI projects and repositories
+              Manage your projects and repositories
             </p>
           </div>
         </header>
@@ -206,7 +206,7 @@ export default function Dashboard() {
               </div>
               <h3 className="text-base font-semibold text-white mb-1.5">Generate New Project</h3>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                Describe your idea in plain English and AI will scaffold a complete application.
+                Describe your idea in plain English and our Agents will scaffold a complete application.
               </p>
             </button>
 
@@ -231,7 +231,7 @@ export default function Dashboard() {
               </div>
               <h3 className="text-base font-semibold text-white mb-1.5">Add Repository</h3>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                Import a local folder or GitHub repository to chat with and edit using AI.
+                Import a local folder or GitHub repository to chat with and edit using our Agents
               </p>
             </button>
           </div>

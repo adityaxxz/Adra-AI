@@ -16,6 +16,7 @@ interface Repository {
   name: string;
   is_indexed: boolean;
   provider: string;
+  created_at?: string;
 }
 
 interface SidebarProps {
@@ -119,9 +120,10 @@ interface RepoChatSectionProps {
   onSelectSession?: (sessionId: string) => void;
   onNewChat?: () => void;
   repoPath: string;
+  isMostRecent?: boolean;
 }
 
-function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession, onNewChat, repoPath }: RepoChatSectionProps) {
+function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession, onNewChat, repoPath, isMostRecent }: RepoChatSectionProps) {
   const [open, setOpen] = useState(isActiveRepo);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const router = useRouter();
@@ -157,7 +159,7 @@ function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession,
       >
         <RepoIcon />
         <span className="flex-1 truncate text-left">{repo.name}</span>
-        {repo.is_indexed && (
+        {repo.is_indexed && isMostRecent && (
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 mr-1" title="Indexed" />
         )}
         <ChevronIcon open={open} />
@@ -223,8 +225,18 @@ export function Sidebar({
   const router = useRouter();
   const pathname = usePathname();
   const user = useUser();
-  const [projectsOpen, setProjectsOpen] = useState(false);
-  const [reposOpen, setReposOpen] = useState(true);
+  const [projectsOpen, setProjectsOpen] = useState(() => pathname.startsWith('/projects'));
+  const [reposOpen, setReposOpen] = useState(() => !pathname.startsWith('/projects'));
+
+  useEffect(() => {
+    if (pathname.startsWith('/projects')) {
+      setProjectsOpen(true);
+      setReposOpen(false);
+    } else if (pathname.startsWith('/repositories')) {
+      setProjectsOpen(false);
+      setReposOpen(true);
+    }
+  }, [pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -246,19 +258,6 @@ export function Sidebar({
             Adra-AI
           </Link>
         </div>
-
-        {/* New Chat button */}
-        {activeRepoId && onNewChat && (
-          <div className="flex gap-2">
-            <button
-              onClick={onNewChat}
-              className="btn-primary w-full text-xs py-2"
-            >
-              <PlusIcon />
-              New Chat
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="divider mx-4 my-0" />
@@ -296,13 +295,14 @@ export function Sidebar({
                   >
                     <FolderIcon />
                     <span className="flex-1 truncate">{project.name}</span>
-                    <span className={`badge text-[10px] ${
-                      project.status === 'completed' ? 'badge-green' :
-                      project.status === 'in_progress' ? 'badge-blue' :
-                      project.status === 'failed' ? 'badge-red' : 'badge-zinc'
-                    }`}>
-                      {project.status === 'in_progress' ? 'running' : project.status}
-                    </span>
+                    {project.status !== 'completed' && (
+                      <span className={`badge text-[10px] ${
+                        project.status === 'in_progress' ? 'badge-blue' :
+                        project.status === 'failed' ? 'badge-red' : 'badge-zinc'
+                      }`}>
+                        {project.status === 'in_progress' ? 'running' : project.status}
+                      </span>
+                    )}
                   </Link>
                 ))}
 
@@ -324,17 +324,25 @@ export function Sidebar({
 
           {reposOpen && (
             <div className="mt-1 space-y-0.5">
-              {repositories.map((repo) => (
-                <RepoChatSection
-                  key={repo.id}
-                  repo={repo}
-                  isActiveRepo={activeRepoId === repo.id}
-                  activeSessionId={activeSessionId}
-                  onSelectSession={onSelectSession}
-                  onNewChat={onNewChat}
-                  repoPath={`/repositories/${repo.id}`}
-                />
-              ))}
+              {(() => {
+                const mostRecentRepo = [...repositories].sort((a, b) => {
+                  const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+                  const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+                  return timeB - timeA;
+                })[0];
+                return repositories.map((repo) => (
+                  <RepoChatSection
+                    key={repo.id}
+                    repo={repo}
+                    isActiveRepo={activeRepoId === repo.id}
+                    activeSessionId={activeSessionId}
+                    onSelectSession={onSelectSession}
+                    onNewChat={onNewChat}
+                    repoPath={`/repositories/${repo.id}`}
+                    isMostRecent={mostRecentRepo && mostRecentRepo.id === repo.id}
+                  />
+                ));
+              })()}
 
               {repositories.length === 0 && (
                 <p className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>

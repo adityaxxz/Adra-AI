@@ -85,7 +85,10 @@ function RepositoryPageInner() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [showDirectory, setShowDirectory] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -287,10 +290,19 @@ function RepositoryPageInner() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!repository || !confirm('Delete this repository?')) return;
-    await repositoriesAPI.deleteRepository(repositoryId);
-    router.push('/dashboard');
+  const handleDelete = () => {
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!repository || deleteConfirmName !== repository.name) return;
+    try {
+      await repositoriesAPI.deleteRepository(repositoryId);
+      router.push('/dashboard');
+    } catch (error) {
+      console.error(error);
+      alert('Failed to delete repository.');
+    }
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -401,16 +413,15 @@ function RepositoryPageInner() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Indexing status / stats */}
-            <span className={`badge text-[10px] ${repository.is_indexed ? 'badge-green' : 'badge-yellow'}`}>
-              {isIndexing ? '⚡ Indexing…' : repository.is_indexed ? '✓ Indexed' : '⏳ Not indexed'}
-            </span>
-
             {/* File tree toggle */}
             {isReady && (
               <button
                 onClick={() => setShowDirectory(d => !d)}
-                className={`btn-ghost text-xs rounded-lg px-3 py-1.5 ${showDirectory ? 'text-violet-400' : ''}`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 ${
+                  showDirectory
+                    ? 'bg-violet-600 border-violet-500 text-white hover:bg-violet-700'
+                    : 'bg-[#a78bfa]/10 hover:bg-[#a78bfa]/20 border-[#a78bfa]/40 hover:border-[#a78bfa] text-[#a78bfa] hover:text-white'
+                }`}
                 id="toggle-file-tree"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -421,13 +432,10 @@ function RepositoryPageInner() {
               </button>
             )}
 
-
-
             {/* Delete */}
             <button
               onClick={handleDelete}
-              className="btn-ghost p-2 rounded-lg"
-              style={{ color: 'var(--text-muted)' }}
+              className="p-2 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all duration-200"
               title="Delete repository"
               id="delete-repo-btn"
             >
@@ -681,9 +689,9 @@ function RepositoryPageInner() {
                   <SendIcon spinning={isProcessing} />
                 </button>
               </div>
-              <p className="text-xs text-center mt-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>
+              {/* <p className="text-xs text-center mt-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>
                 {mode === 'ask' ? 'AI answers are based on indexed code context' : 'AI will edit files across your codebase'}
-              </p>
+              </p> */}
             </form>
           </div>
         </div>
@@ -691,7 +699,7 @@ function RepositoryPageInner() {
 
       {/* ---- File viewer overlay ---- */}
       {selectedFile && (
-        <div className="modal-overlay" onClick={() => { setSelectedFile(null); setSelectedFileContent(null); }}>
+        <div className="modal-overlay" onClick={() => { setSelectedFile(null); setSelectedFileContent(null); setCopied(false); }}>
           <div
             className="w-full max-w-3xl rounded-2xl overflow-hidden animate-scale-in"
             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
@@ -705,14 +713,33 @@ function RepositoryPageInner() {
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 <button
                   onClick={async () => {
-                    if (selectedFileContent) await navigator.clipboard.writeText(selectedFileContent);
+                    if (selectedFileContent) {
+                      await navigator.clipboard.writeText(selectedFileContent);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }
                   }}
-                  className="btn-ghost text-xs px-3 py-1.5 rounded-lg"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#a78bfa]/10 hover:bg-[#a78bfa]/20 border-[#a78bfa]/40 hover:border-[#a78bfa] text-[#a78bfa] hover:text-white"
                 >
-                  Copy
+                  {copied ? (
+                    <>
+                      <svg className="w-3.5 h-3.5 animate-scale-in" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                      Copy
+                    </>
+                  )}
                 </button>
                 <button
-                  onClick={() => { setSelectedFile(null); setSelectedFileContent(null); }}
+                  onClick={() => { setSelectedFile(null); setSelectedFileContent(null); setCopied(false); }}
                   className="btn-ghost p-2 rounded-lg"
                   style={{ color: 'var(--text-muted)' }}
                 >
@@ -730,7 +757,73 @@ function RepositoryPageInner() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* ---- GitHub-like Delete Confirmation Modal ---- */}
+      {deleteConfirmOpen && (
+          <div className="modal-overlay" onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}>
+            <div
+              className="w-full max-w-md rounded-2xl overflow-hidden animate-scale-in"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-sm font-semibold text-white">Delete Repository</span>
+                <button
+                  onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}
+                  className="btn-ghost p-2 rounded-lg"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-5 flex-1 space-y-4">
+                <p className="text-xs leading-relaxed text-[#6b6b80]">
+                  <span className="text-red-400">This action cannot  be undone.</span> <span className="text-white">This will permanently delete this repository, including all its indexes, files, and chat logs.</span>
+                </p>
+                
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-white select-text">
+                    Please type "<strong className="text-[#a78bfa]">{repository.name}</strong>" to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={deleteConfirmName}
+                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-lg border focus:outline-none transition-all duration-150"
+                    style={{
+                      background: '#090910',
+                      borderColor: 'var(--border)',
+                      color: '#fff',
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="px-5 py-4 border-t flex justify-end gap-3" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.01)' }}>
+                <button
+                  onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}
+                  className="btn-ghost text-xs px-4 py-2 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteAction}
+                  disabled={deleteConfirmName !== repository.name}
+                  className={`text-xs px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    deleteConfirmName === repository.name
+                      ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                      : 'bg-red-950/20 border border-red-500/20 text-red-500/35 cursor-not-allowed'
+                  }`}
+                >
+                  I understand, delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
   );
 }
 

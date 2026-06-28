@@ -13,6 +13,7 @@ SUPPORTED_EXTENSIONS = {
     ".css": "css",
     ".md": "markdown",
     ".json": "json",
+    ".go": "go"
 }
 
 IGNORE_DIRS = {
@@ -25,7 +26,6 @@ IGNORE_DIRS = {
     "build",
     ".next",
     "lib",
-    
 }
 
 

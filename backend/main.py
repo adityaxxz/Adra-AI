@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware

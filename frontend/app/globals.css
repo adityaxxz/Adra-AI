@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,11 +6,11 @@
 
 :root {
   /* Base colors */
-  --bg-base: #0a0a0f;
-  --bg-surface: #111118;
-  --bg-elevated: #16161f;
-  --bg-hover: #1c1c28;
-  --bg-active: #22223a;
+  --bg-base: #090910;
+  --bg-surface: #111119;
+  --bg-elevated: #161622;
+  --bg-hover: #1e1e2f;
+  --bg-active: #25253b;
 
   /* Sidebar */
   --sidebar-width: 260px;
@@ -18,35 +18,37 @@
   --sidebar-border: rgba(156, 67, 254, 0.08);
 
   /* Accent colors */
-  --accent: #9c43fe;
-  --accent-hover: #8b32eb;
-  --accent-light: rgba(156, 67, 254, 0.15);
-  --accent-glow: rgba(156, 67, 254, 0.4);
+  --accent: #a78bfa;
+  --accent-hover: #906bf9;
+  --accent-light: rgba(167, 139, 250, 0.15);
+  --accent-glow: rgba(167, 139, 250, 0.4);
+  --accent-green: #00e5a0;
+  --accent-purple: #a78bfa;
 
   /* Secondary accent */
   --indigo: #6366f1;
   --blue: #4cc2e9;
 
   /* Text */
-  --text-primary: #f4f4f6;
-  --text-secondary: #9494a8;
+  --text-primary: #f0f0f5;
+  --text-secondary: #6b6b80;
   --text-muted: #5c5c72;
   --text-accent: #a78bfa;
 
   /* Borders */
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(156, 67, 254, 0.3);
-  --border-active: rgba(156, 67, 254, 0.5);
+  --border: #1f1f2e;
+  --border-hover: rgba(167, 139, 250, 0.3);
+  --border-active: rgba(167, 139, 250, 0.5);
 
   /* Shadows */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
-  --shadow-accent: 0 0 30px rgba(156, 67, 254, 0.2);
+  --shadow-accent: 0 0 30px rgba(167, 139, 250, 0.2);
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #9c43fe 0%, #6366f1 50%, #4cc2e9 100%);
-  --gradient-subtle: linear-gradient(135deg, rgba(156,67,254,0.08) 0%, rgba(99,102,241,0.04) 100%);
+  --gradient-primary: linear-gradient(135deg, #a78bfa 0%, #7c3aed 55%, #4f46e5 100%);
+  --gradient-subtle: linear-gradient(135deg, rgba(167,139,250,0.08) 0%, rgba(99,102,241,0.04) 100%);
 
   /* Background */
   --background: var(--bg-base);
@@ -173,6 +175,9 @@ body {
 
   /* Text utilities */
   .text-balance { text-wrap: balance; }
+  .font-heading { font-family: 'Space Grotesk', sans-serif; }
+  .font-body { font-family: 'Inter', sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
 }
 
 /* ===========================

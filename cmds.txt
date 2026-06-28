@@ -4,6 +4,12 @@ uv sync
 uv pip install -r pyproject.toml
 
 
+#run  backend (from root)
+uvicorn backend.main:app --reload --port 8000
+
+#run frontend from /frontend
+npm run dev
+
 # web console - ssh@root
 
 cd /opt/adra-ai
