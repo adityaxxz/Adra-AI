@@ -11,11 +11,11 @@ uvicorn backend.main:app --reload --port 8000
 npm run dev
 
 # web console - ssh@root
-
 cd /opt/adra-ai
 git pull origin main
-docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml down
+
+docker compose -f docker-compose.prod.yml up -d --build
 
 docker compose -f docker-compose.prod.yml up -d --build backend
 docker compose -f docker-compose.prod.yml up -d --force-recreate backend
@@ -25,10 +25,7 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate backend
 # logs
 Check Container Status:
 docker compose -f docker-compose.prod.yml ps
-
 docker compose -f docker-compose.prod.yml logs -f backend
-
-
 
 ---
 
