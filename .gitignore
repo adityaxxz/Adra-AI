@@ -30,6 +30,15 @@ CLAUDE.md
 backend/backend_impl.md
 repo_explained.md
 .agents
+cmds_for_droplets.sh
+
+
+
+
+
+
+
+
 
 # --- Environment Variables & Secrets ---
 .env
@@ -107,7 +116,6 @@ pnpm-debug.log*
 .turbo/
 .vercel/
 *.tsbuildinfo
-
 # --- AI Models / Large Checkpoints ---
 models/
 checkpoints/
