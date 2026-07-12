@@ -47,7 +47,9 @@ export const useWebSocket = (sessionId: string, userId: string) => {
       wsRef.current.onmessage = (event) => {
         console.log('WebSocket: Message received:', event.data);
         const message: WebSocketMessage = JSON.parse(event.data);
-        setMessages((prev) => [...prev, message]);
+        
+        // Only keep the latest message to reduce clutter
+        setMessages([message]);
         
         if (message.type === 'error') {
           setError(message.error || 'An error occurred');

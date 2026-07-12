@@ -52,7 +52,7 @@ from agent.tools import set_project_root
 
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://adrai:adrai_password@localhost:5432/adrai")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://adrai:adrai_password@localhost:5433/adrai")
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

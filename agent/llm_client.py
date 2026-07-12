@@ -4,6 +4,7 @@ import threading
 from typing import Type, TypeVar
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from pydantic import BaseModel
 from dotenv import load_dotenv
 load_dotenv()
@@ -55,8 +56,29 @@ patch_google_genai_retries()
 
 #################################### MODELS ################################
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, max_retries=0)
-# llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
+# Configure LLM provider based on environment variable
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
+
+if LLM_PROVIDER == "nvidia":
+    nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+    if not nvidia_api_key:
+        raise ValueError("NVIDIA_API_KEY environment variable is required when LM_PROVIDER=nvidia")
+    
+    # Using meta/llama-3.1-70b-instruct which supports structured output via LangChain
+    # Alternative: mistralai/mixtral-8x22b-instruct-v0.1 or meta/llama-3.1-405b-instruct
+    llm = ChatNVIDIA(
+        model="meta/llama-3.1-70b-instruct",
+        api_key=nvidia_api_key,
+        temperature=0,
+        top_p=0.7,
+        max_tokens=1024,
+    )
+elif LLM_PROVIDER == "groq":
+    llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
+elif LLM_PROVIDER == "gemini":
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, max_retries=0)
+else:
+    raise ValueError(f"Unknown LLM provider: {LLM_PROVIDER}. Supported providers: gemini, groq, nvidia")
 
 
 
@@ -75,7 +97,7 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     return any(
         token in msg
-        for token in ("429", "rate limit", "resource exhausted", "too many requests")
+        for token in ("429", "rate limit", "resource exhausted", "too many requests", "quota exceeded")
     )
 
 
@@ -120,7 +142,7 @@ def structured_invoke(schema: Type[T], prompt: str) -> T:
         except Exception as e:
             last_error = e
             if _is_rate_limit_error(e):
-                print(f"\n[ERROR] Google GenAI Rate Limit / Resource Exhausted (429) hit: {e}")
+                print(f"\n[ERROR] {LLM_PROVIDER.upper()} Rate Limit / Resource Exhausted (429) hit: {e}")
                 raise
             if attempt < MAX_RETRIES - 1:
                 continue
@@ -145,7 +167,7 @@ def simple_invoke(prompt: str) -> str:
         except Exception as e:
             last_error = e
             if _is_rate_limit_error(e):
-                print(f"\n[ERROR] Google GenAI Rate Limit / Resource Exhausted (429) hit: {e}")
+                print(f"\n[ERROR] {LLM_PROVIDER.upper()} Rate Limit / Resource Exhausted (429) hit: {e}")
                 raise
             if attempt < MAX_RETRIES - 1:
                 continue

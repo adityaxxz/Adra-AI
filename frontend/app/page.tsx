@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Sparkles,
@@ -33,8 +34,37 @@ const TERMINAL_STEPS = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const terminalContainerRef = useRef<HTMLDivElement>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setIsLoggedIn(true);
+      router.push('/dashboard');
+    }
+  }, [router]);
+
+  useEffect(() => {
+    // Listen for storage changes to update login state across tabs
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'token') {
+        const loggedIn = !!e.newValue;
+        setIsLoggedIn(loggedIn);
+        if (loggedIn) {
+          router.push('/dashboard');
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [router]);
 
   useEffect(() => {
     if (currentStep < TERMINAL_STEPS.length - 1) {
@@ -137,15 +167,27 @@ export default function Home() {
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 w-full max-w-md">
-          <Link
-            href="/auth/signin"
-            className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
-            id="hero-cta-start"
-            style={{ background: "linear-gradient(135deg, #a78bfa 0%, #6366f1 100%)" }}
-          >
-            Start Building Free
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+          {isLoggedIn ? (
+            <Link
+              href="/dashboard"
+              className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
+              id="hero-cta-dashboard"
+              style={{ background: "linear-gradient(135deg, #a78bfa 0%, #6366f1 100%)" }}
+            >
+              View Your Dashboard
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          ) : (
+            <Link
+              href="/auth/signin"
+              className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
+              id="hero-cta-start"
+              style={{ background: "linear-gradient(135deg, #a78bfa 0%, #6366f1 100%)" }}
+            >
+              Start Building Free
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          )}
           <a
             href="https://github.com/adityaxxz/Adra-AI"
             target="_blank"
@@ -243,19 +285,19 @@ export default function Home() {
         </div>
 
         {/* Problem Section */}
-        <div className="w-full max-w-5xl mx-auto mb-32 px-4 text-left">
-          <div className="text-center mb-16">
+        {/* <div className="w-full max-w-5xl mx-auto mb-32 px-4 text-left"> */}
+          {/* <div className="text-center mb-16"> */}
             {/* <span className="text-xs font-mono font-bold tracking-widest text-[#a78bfa] uppercase px-3 py-1 rounded-full border border-[#a78bfa]/20 bg-[#a78bfa]/5">
               The Problem
             </span> */}
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mt-4 font-heading tracking-tight">
+            {/* <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mt-4 font-heading tracking-tight">
               Generic AI codegen doesn't know what you already built.
             </h2>
-          </div>
+          </div> */}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> */}
             {/* Card 1 - Bad */}
-            <div className="card p-6 border border-[#1f1f2e] border-t-[3px] border-t-red-500/30 opacity-75 hover:opacity-100 transition-all duration-300 bg-[#111119]/50 flex flex-col justify-between">
+            {/* <div className="card p-6 border border-[#1f1f2e] border-t-[3px] border-t-red-500/30 opacity-75 hover:opacity-100 transition-all duration-300 bg-[#111119]/50 flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-xs font-mono text-red-400 uppercase tracking-widest font-bold">
@@ -269,10 +311,10 @@ export default function Home() {
                   Provides code suggestions based on training data only. Has zero awareness of your existing authentication middleware, shared utility helpers, or custom folder structure and naming conventions.
                 </p>
               </div>
-            </div>
+            </div> */}
 
             {/* Card 2 - Bad */}
-            <div className="card p-6 border border-[#1f1f2e] border-t-[3px] border-t-red-500/30 opacity-75 hover:opacity-100 transition-all duration-300 bg-[#111119]/50 flex flex-col justify-between">
+            {/* <div className="card p-6 border border-[#1f1f2e] border-t-[3px] border-t-red-500/30 opacity-75 hover:opacity-100 transition-all duration-300 bg-[#111119]/50 flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-xs font-mono text-red-400 uppercase tracking-widest font-bold">
@@ -286,10 +328,10 @@ export default function Home() {
                   A single model attempts to plan, write, and validate code all at once. As the context window fills up, hallucinations compound and cross-file consistency breaks, producing code that won't run.
                 </p>
               </div>
-            </div>
+            </div> */}
 
             {/* Card 3 - Good */}
-            <div className="card p-6 border border-[#a78bfa]/30 hover:border-[#a78bfa] shadow-[0_0_20px_rgba(167,139,250,0.05)] hover:shadow-[0_0_30px_rgba(167,139,250,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
+            {/* <div className="card p-6 border border-[#a78bfa]/30 hover:border-[#a78bfa] shadow-[0_0_20px_rgba(167,139,250,0.05)] hover:shadow-[0_0_30px_rgba(167,139,250,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-[#a78bfa]/5 rounded-full filter blur-xl pointer-events-none" />
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -304,10 +346,10 @@ export default function Home() {
                   Our Repository Agent scans, parses, and indexes your entire codebase into Qdrant using AST-guided, code-aware chunking. By respecting class, function, and import boundaries, we preserve the logical context of your files.
                 </p>
               </div>
-            </div>
+            </div> */}
 
             {/* Card 4 - Good */}
-            <div className="card p-6 border border-[#a78bfa]/30 hover:border-[#a78bfa] shadow-[0_0_20px_rgba(167,139,250,0.05)] hover:shadow-[0_0_30px_rgba(167,139,250,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
+            {/* <div className="card p-6 border border-[#a78bfa]/30 hover:border-[#a78bfa] shadow-[0_0_20px_rgba(167,139,250,0.05)] hover:shadow-[0_0_30px_rgba(167,139,250,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-[#a78bfa]/5 rounded-full filter blur-xl pointer-events-none" />
               <div>
                 <div className="flex justify-between items-start mb-4">
@@ -322,9 +364,9 @@ export default function Home() {
                   Planning, architecture design, coding, and integration are split across distinct, specialized LangGraph agents. Each has its own state and specific scope, eliminating model overload.
                 </p>
               </div>
-            </div>
-          </div>
-        </div>
+            </div> */}
+          {/* </div>
+        </div> */}
 
         {/* Operation Modes Section */}
         <div className="w-full max-w-5xl mx-auto mb-32 px-4 text-left">
@@ -550,9 +592,6 @@ export default function Home() {
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white font-heading tracking-tight">
               Built on production-grade tooling.
             </h2>
-            <p className="text-base text-[#6b6b80] mt-3 font-body">
-              No toy demos. Every library chosen for a specific architectural reason.
-            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -582,7 +621,7 @@ export default function Home() {
                 icon: <Layers className="w-5 h-5 text-[#a78bfa]" />,
               },
               {
-                name: "Gemini 2.5 Flash",
+                name: "Gemini + Groq API Models",
                 role: "Primary LLM",
                 desc: "High token context limits with extremely low inference speeds for repository ingestion.",
                 icon: <Cpu className="w-5 h-5 text-[#00e5a0]" />,

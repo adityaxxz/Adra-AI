@@ -301,14 +301,21 @@ export default function ProjectPage() {
             >
               <h2 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: '#a78bfa' }}>
                 <div className="w-4 h-4 rounded-full border-2 border-t-violet-400 border-violet-400/20 animate-spin" />
-                Generation in progress…
+                Generating your project…
               </h2>
               <div className="space-y-2">
-                {messages.map((msg, idx) => (
-                  <div key={idx} className="rounded-lg p-3 text-xs" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-                    <p style={{ color: 'var(--text-secondary)' }}>{msg.message || msg.step || 'Processing…'}</p>
+                {messages.length > 0 && (
+                  <div className="rounded-lg p-4 text-xs" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                    <p style={{ color: 'var(--text-secondary)' }}>
+                      {latestMessage?.message || latestMessage?.step || 'Processing…'}
+                    </p>
                   </div>
-                ))}
+                )}
+                {messages.length === 0 && (
+                  <div className="rounded-lg p-4 text-xs" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                    <p style={{ color: 'var(--text-secondary)' }}>Initializing…</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

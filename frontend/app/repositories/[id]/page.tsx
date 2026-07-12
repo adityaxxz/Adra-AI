@@ -458,22 +458,22 @@ function RepositoryPageInner() {
               {isIndexing ? (
                 <div>
                   <p className="text-xs font-medium" style={{ color: '#a78bfa' }}>Indexing repository…</p>
-                  {messages.length > 0 && (
+                  {latestMessage && (
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {messages[messages.length - 1].step === 'scanning' && '📂 Scanning files…'}
-                      {messages[messages.length - 1].step === 'chunking' && '✂️ Processing chunks…'}
-                      {messages[messages.length - 1].step === 'embedding' && '🔮 Generating embeddings…'}
-                      {messages[messages.length - 1].step === 'indexing' && '💾 Storing in vector DB…'}
-                      {messages[messages.length - 1].step === 'complete' && '✅ Done!'}
-                      {messages[messages.length - 1].message && !['scanning','chunking','embedding','indexing','complete'].includes(messages[messages.length - 1].step ?? '')
-                        && messages[messages.length - 1].message}
+                      {latestMessage.step === 'scanning' && 'Scanning files…'}
+                      {latestMessage.step === 'chunking' && 'Processing chunks…'}
+                      {latestMessage.step === 'embedding' && 'Generating embeddings…'}
+                      {latestMessage.step === 'indexing' && 'Storing in vector database…'}
+                      {latestMessage.step === 'complete' && 'Indexing complete!'}
+                      {latestMessage.message && !['scanning','chunking','embedding','indexing','complete'].includes(latestMessage.step ?? '')
+                        && latestMessage.message}
                     </p>
                   )}
-                  {messages.length > 0 && messages[messages.length - 1].progress !== undefined && (
+                  {latestMessage?.progress !== undefined && (
                     <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(139,92,246,0.15)' }}>
                       <div
                         className="h-full rounded-full transition-all duration-300"
-                        style={{ background: 'var(--accent)', width: `${messages[messages.length - 1].progress}%` }}
+                        style={{ background: 'var(--accent)', width: `${latestMessage.progress}%` }}
                       />
                     </div>
                   )}

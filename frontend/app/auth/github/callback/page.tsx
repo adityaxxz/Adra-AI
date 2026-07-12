@@ -60,27 +60,10 @@ function GitHubCallbackContent() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
       
       <div className="card p-8 max-w-md w-full mx-4 relative z-10">
-        {status === 'loading' && (
+        {(status === 'loading' || status === 'success') && (
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto mb-4"></div>
-            <h2 className="text-xl font-semibold text-white mb-2">
-              Signing in with GitHub...
-            </h2>
-            <p className="text-zinc-400 text-sm">
-              Please wait while we complete your sign-in
-            </p>
-          </div>
-        )}
-
-        {status === 'success' && (
-          <div className="text-center">
-            <div className="text-green-500 text-5xl mb-4">✓</div>
-            <h2 className="text-xl font-semibold text-white mb-2">
-              Successfully signed in!
-            </h2>
-            <p className="text-zinc-400 text-sm">
-              Redirecting to dashboard...
-            </p>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-500 mx-auto mb-4"></div>
+            <p className="text-zinc-400 text-sm font-medium">Loading dashboard...</p>
           </div>
         )}
 

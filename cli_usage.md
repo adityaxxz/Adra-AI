@@ -8,6 +8,7 @@ This guide covers how to set up and use the Adra-AI Command Line Interface (CLI)
 - An API key for your chosen LLM provider:
   - **Google Gemini** (default): [Google AI Studio](https://aistudio.google.com/apikey)
   - **Groq** (optional): [Groq Console](https://console.groq.com/)
+  - **NVIDIA NIM** (optional): [NVIDIA API Catalog](https://build.nvidia.com/) - Uses `meta/llama-3.1-70b-instruct` for structured output support
 - Git (for cloning GitHub repositories)
 
 ## Installation
@@ -49,9 +50,15 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory for CLI usage:
 
 ```env
+# Choose your LLM provider: gemini (default), groq, or nvidia
+LLM_PROVIDER="gemini"
+
+# API keys for your chosen provider
 GOOGLE_API_KEY="your-google-api-key"
 GROQ_API_KEY="your-groq-api-key"
+NVIDIA_API_KEY="your-nvidia-api-key"
 
+# LLM throttling settings
 LLM_MIN_INTERVAL_SEC=2.1
 LLM_MAX_RETRIES=5
 LLM_MAX_CONTENT_CHARS=10000

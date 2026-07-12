@@ -156,7 +156,7 @@ flowchart LR
 - **Context & Token Management** — Smart context truncation (4,000 chars for repo context, 8,000 chars for project context) to prevent token overflow
 - **Throttling & Fault Tolerance** — Custom rate limiting (2.1s minimum interval) and 5x retries to prevent API resource exhaustion
 - **Iterative Loop Limits** — Caps recursion depth at 100 steps to prevent infinite execution loops during agent runs
-- **Pluggable LLM backend** — Swap between Google Gemini and Groq models via configuration
+- **Pluggable LLM backend** — Swap between Google Gemini, Groq, and NVIDIA NIM models via configuration
 
 ### Repository-Aware Features
 - **Repository scanning** — Automatically scans repositories for supported file types (Python, JavaScript, TypeScript, HTML, CSS, Markdown, JSON)
@@ -190,7 +190,7 @@ flowchart LR
 | Vector Store | Qdrant 1.12.0 |
 | Orchestration | LangGraph, LangChain |
 | LLM (default) | Google Gemini 2.5 Flash |
-| LLM (optional) | Groq (`openai/gpt-oss-120b`) |
+| LLM (optional) | Groq (`openai/gpt-oss-120b`), NVIDIA NIM (`meta/llama-3.1-70b-instruct`) |
 | Authentication | OAuth 2.0 (Google, GitHub) |
 | Real-time | WebSockets |
 | Deployment | Docker, Docker Compose |
@@ -220,13 +220,15 @@ cp .env.example .env
 
 Open `.env` and fill in your credentials. Refer to [.env.example](.env.example) for descriptions of each environment variable.
 
+**Note**: The PostgreSQL port is mapped to `5433` on the host (from container port `5432`) to avoid conflicts with other PostgreSQL instances. If you need to change this, modify the ports mapping in `docker-compose.yml`.
+
 3. Start all services:
 ```bash
 docker-compose up -d
 ```
 
 This will start:
-- PostgreSQL (port 5432)
+- PostgreSQL (port 5433, mapped from container port 5432)
 - Qdrant (port 6333)
 - FastAPI Backend (port 8000)
 - Next.js Frontend (port 3000)
@@ -404,6 +406,6 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## Acknowledgments
 
 - Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and [LangChain](https://github.com/langchain-ai/langchain)
-- LLM providers: [Groq](https://groq.com/) and [Google AI](https://ai.google.dev/)
+- LLM providers: [Groq](https://groq.com/), [Google AI](https://ai.google.dev/), and [NVIDIA NIM](https://build.nvidia.com/)
 - Vector storage: [Qdrant](https://qdrant.tech/)
 - Web framework: [FastAPI](https://fastapi.tiangolo.com/) and [Next.js](https://nextjs.org/)

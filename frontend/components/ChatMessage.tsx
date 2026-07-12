@@ -220,10 +220,10 @@ export function TypingIndicator() {
   return (
     <div className="flex gap-3 animate-fade-in">
       <AIAvatar />
-      <div className="chat-bubble-assistant flex items-center gap-1.5 py-4 px-5">
-        <div className="typing-dot" />
-        <div className="typing-dot" />
-        <div className="typing-dot" />
+      <div className="chat-bubble-assistant flex items-center gap-2 py-3 px-4">
+        <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+        <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
+        <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
       </div>
     </div>
   );

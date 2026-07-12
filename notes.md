@@ -6,7 +6,7 @@ embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",ou
 - fix the need to reload the page to see the changes
 
 
-### TODO 🔜
+### TODO ✅
 - fix the edit files response, and make it more efficient
 - improve the code aware chunking strategy for py files
 
@@ -16,7 +16,7 @@ embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",ou
 
 ---
 
-### TODO - prod
+### TODO - prod ✅
 
 - github oauth login issues, check the implementation and .env vars
 
@@ -26,6 +26,13 @@ embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",ou
 
 - no response is shown when asking about the uploaded repo, the graph works properly as i can see it in langsmith, but the site is unable to show the response, (if the llm returns a 429 resource exhausted issue , display that too , not the whole error just "Error calling model - 429 resource exhausted")
 
-- 
 
+---
+
+
+## Todo
+
+- when a user is logged in, and i open the site again on different tab , it shows the homepage, rather than the logged in dashboard page.
+
+if the user has loggedin in the current browser session, maintain it, and then clicking "get started free" in the homepage goes straight to the dashboard, if opened on a diff tab.
 

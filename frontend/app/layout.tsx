@@ -41,6 +41,26 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  const token = localStorage.getItem('token');
+                  window.__AUTH_STATE__ = { isLoggedIn: !!token };
+                  if (token) {
+                    const path = window.location.pathname;
+                    if (path === '/' || path === '/auth/signin' || path === '/auth/signin/') {
+                      window.location.replace('/dashboard');
+                    }
+                  }
+                } catch (e) {
+                  window.__AUTH_STATE__ = { isLoggedIn: false };
+                }
+              })();
+            `,
+          }}
+        />
       </head>
       <body className="antialiased">
         {children}
