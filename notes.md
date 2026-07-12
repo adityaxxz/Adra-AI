@@ -36,3 +36,7 @@ embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",ou
 
 if the user has loggedin in the current browser session, maintain it, and then clicking "get started free" in the homepage goes straight to the dashboard, if opened on a diff tab.
 
+- users can download their generated project in a folder or zip file
+
+- show  the generated project, in a editor view can that users can edit the files as well
+
