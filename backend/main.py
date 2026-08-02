@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +54,12 @@ from agent.tools import set_project_root
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://adrai:adrai_password@localhost:5433/adrai")
+# Heroku Postgres injects DATABASE_URL as postgres:// (or plain postgresql://),
+# but SQLAlchemy's async engine needs the asyncpg driver scheme.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -91,9 +98,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # CORS middleware
-# Read allowed origins from env so production locks to the Vercel domain
+# Read allowed origins from env so production locks to the Vercel domain.
+# ALLOWED_ORIGINS takes precedence (comma-separated list); falls back to FRONTEND_URL.
 _frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-_allowed_origins = [_frontend_url, "http://localhost:3000"]
+_raw_allowed_origins = os.getenv("ALLOWED_ORIGINS")
+if _raw_allowed_origins:
+    _allowed_origins = [origin.strip() for origin in _raw_allowed_origins.split(",") if origin.strip()]
+else:
+    _allowed_origins = [_frontend_url]
+    if not os.getenv("FRONTEND_URL"):
+        # No production config supplied at all - assume local development.
+        _allowed_origins.append("http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
@@ -788,10 +803,9 @@ async def delete_repository(
         await db.commit()
         
         # Delete Qdrant collection if exists
-        from backend.services.vector_store import get_vector_store
-        vector_store = get_vector_store()
+        from agent.repository.vector_store import clear_collection
         try:
-            vector_store.clear_collection(repository.collection_name)
+            clear_collection(repository.collection_name)
             print(f"Cleared collection: {repository.collection_name}")
         except Exception as e:
             print(f"Failed to clear collection: {e}")
@@ -1163,24 +1177,34 @@ async def list_sessions(
 # WebSocket Endpoint
 # =========================
 
+# Heroku's router drops WebSocket connections idle for ~55s with no traffic,
+# so the server must send its own keepalive instead of relying on the client.
+WS_PING_INTERVAL_SEC = 30
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time progress updates."""
     # For now, we'll use a simple user_id from query params
     # In production, this should come from JWT token
     user_id = websocket.query_params.get("user_id", "anonymous")
-    
+
     await manager.connect(websocket, session_id, user_id)
-    
+
     try:
         while True:
             # Keep connection alive and handle incoming messages
-            data = await websocket.receive_json()
-            
+            try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=WS_PING_INTERVAL_SEC)
+            except asyncio.TimeoutError:
+                # No client traffic within the interval - send a server-initiated ping
+                await websocket.send_json({"type": "ping"})
+                continue
+
             # Handle incoming messages if needed
             if data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
-            
+
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
 
@@ -1191,4 +1215,4 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

@@ -16,15 +16,13 @@ from agent.tools import set_project_root, init_project_root
 from agent.repository.vector_store import set_active_collection
 
 from backend.db_models import Project, Repository, Session, SessionMode, ProjectStatus
-from backend.services.vector_store import get_vector_store
 
 
 class AgentIntegration:
     """Integrates existing agent pipeline with database storage."""
-    
+
     def __init__(self, db_session):
         self.db = db_session
-        self.vector_store = get_vector_store()
     
     async def create_project_from_generation(
         self,

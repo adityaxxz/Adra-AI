@@ -26,7 +26,6 @@ COPY backend/background_tasks.py backend/
 COPY backend/agent_integration.py backend/
 COPY backend/error_handlers.py backend/
 COPY backend/rate_limit.py backend/
-COPY backend/services/ backend/services/
 
 # Create necessary directories
 RUN mkdir -p generated_projects
@@ -35,8 +34,8 @@ RUN mkdir -p generated_projects
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app:/app/backend
 
-# Expose port
+# Expose port (informational; actual bind port comes from $PORT at runtime)
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Run the application - Heroku assigns a dynamic $PORT, so this must be shell form
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
