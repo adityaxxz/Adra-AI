@@ -67,11 +67,12 @@ if LLM_PROVIDER == "nvidia":
     # Using meta/llama-3.1-70b-instruct which supports structured output via LangChain
     # Alternative: mistralai/mixtral-8x22b-instruct-v0.1 or meta/llama-3.1-405b-instruct
     llm = ChatNVIDIA(
-        model="meta/llama-3.1-70b-instruct",
+        model="meta/llama-3.1-8b-instruct",
         api_key=nvidia_api_key,
         temperature=0,
         top_p=0.7,
         max_tokens=1024,
+        timeout=120,
     )
 elif LLM_PROVIDER == "groq":
     llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0)
