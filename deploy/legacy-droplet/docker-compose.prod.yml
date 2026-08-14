@@ -1,3 +1,6 @@
+# NOTE: Run this file from the REPO ROOT, not from deploy/legacy-droplet/:
+#   docker compose -f deploy/legacy-droplet/docker-compose.prod.yml up -d
+# All relative paths (context, volumes) are resolved from your shell's CWD.
 
 services:
   postgres:
@@ -7,7 +10,7 @@ services:
     environment:
       POSTGRES_DB: adrai
       POSTGRES_USER: adrai
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adrai_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # Must be set in .env — no fallback in prod
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,9 +25,15 @@ services:
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
+      # context must be the repo root so backend/Dockerfile can COPY agent/ and backend/
       context: .
       dockerfile: backend/Dockerfile
     container_name: adrai-backend
@@ -32,10 +41,12 @@ services:
     env_file:
       - .env
     environment:
-      # Override DB host to use the Docker service name
-      DATABASE_URL: postgresql+asyncpg://adrai:${POSTGRES_PASSWORD:-adrai_password}@postgres:5432/adrai
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
+      # Override values from .env to use Docker service hostnames
+      DATABASE_URL: postgresql+asyncpg://adrai:${POSTGRES_PASSWORD}@postgres:5432/adrai
+      # app reads QDRANT_URL (not QDRANT_HOST/PORT) — point it at the local container
+      QDRANT_URL: http://qdrant:6333
+      # NOTE: if using Qdrant Cloud instead, remove the qdrant service above and set
+      # QDRANT_URL in .env to your cloud cluster URL (and keep QDRANT_API_KEY there).
     volumes:
       - ./uploaded_repos:/app/uploaded_repos
       - ./temp_repos:/app/temp_repos
@@ -44,7 +55,7 @@ services:
       postgres:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
 
   nginx:
     image: nginx:alpine
@@ -54,7 +65,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # Path is relative to CWD (repo root) when running with -f flag
+      - ./deploy/legacy-droplet/nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend

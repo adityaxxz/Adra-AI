@@ -15,12 +15,12 @@ A multi-agent Codebase Intelligence platform that turns natural-language prompts
 
 Adra-AI now features a full SaaS architecture with:
 
-- **Backend**: FastAPI with PostgreSQL database and Qdrant vector store
-- **Frontend**: Next.js with React, TypeScript, and Tailwind CSS
+- **Backend**: FastAPI on Heroku (container stack), Heroku Postgres, Qdrant Cloud
+- **Frontend**: Next.js with React, TypeScript, and Tailwind CSS (Vercel)
 - **Authentication**: OAuth 2.0 (Google & GitHub)
-- **Real-time Updates**: WebSocket support for live progress tracking
+- **Real-time Updates**: WebSocket support with server-side keepalive pings (Heroku 55s timeout mitigation)
 - **Observability**: LangSmith tracing for end-to-end agent pipeline visibility
-- **Deployment**: Docker Compose setup for easy deployment
+- **Deployment**: Heroku container stack (`git push heroku main`) + Vercel (frontend)
 
 ### Architecture Diagram
 
@@ -217,7 +217,8 @@ flowchart LR
 | Observability | LangSmith (tracing & debugging), OpenTelemetry (OTLP/gRPC) |
 | Authentication | OAuth 2.0 (Google, GitHub), JWT (HS256 via python-jose) |
 | Real-time | WebSockets |
-| Deployment | Docker, Docker Compose, Nginx, Certbot/Let's Encrypt |
+| Deployment | Heroku (container stack, Basic dyno), Vercel |
+| CI/CD | Heroku Git (`git push heroku main`) |
 | State Management | Zustand |
 | Data Fetching | TanStack Query |
 | Migrations | Alembic |
@@ -337,15 +338,44 @@ Key endpoints include:
 - `POST /repositories/{id}/index` - Index a repository
 - `WS /ws/{session_id}` - WebSocket for real-time progress updates
 
-## 🚀 Deployment 
+## 🚀 Deployment
 
 ### Live Production Architecture
-The live project is fully deployed and configured using:
-* **Frontend**: Deployed on [Vercel](https://vercel.com) (Next.js serverless app).
-* **Backend**: Hosted on a [DigitalOcean Droplet](https://digitalocean.com) in the Bangalore (`blr1`) region, running:
-  - **Docker Compose** container network (FastAPI API, PostgreSQL, Qdrant).
-  - **Nginx** reverse proxy routing requests and handling WebSockets.
-  - **Certbot / Let's Encrypt** for automated SSL/HTTPS.
+The live project is fully deployed across three managed services:
+
+* **Frontend**: Deployed on [Vercel](https://vercel.com) as a serverless Next.js app.
+* **Backend**: Deployed on [Heroku](https://heroku.com) using the **container stack** (Docker-based dyno).
+  - `heroku.yml` at the repo root defines the container build pointing at `backend/Dockerfile`.
+  - Deployed via `git push heroku main` — Heroku builds the Docker image and releases it automatically.
+  - Binds to Heroku's dynamic `$PORT` at runtime (`uvicorn main:app --port ${PORT:-8000}`).
+  - Heroku's router handles HTTPS termination and WebSocket proxying natively (no Nginx needed).
+  - Server-side WebSocket keepalive pings are implemented to prevent Heroku's 55-second idle connection timeout from dropping active agent runs.
+* **Database**: [Heroku Postgres](https://www.heroku.com/postgres) (`essential-0` plan) provisioned as an add-on.
+  - `DATABASE_URL` is automatically injected by Heroku as a config var — no manual setup.
+  - `backend/main.py` normalizes the `postgres://` scheme Heroku injects to `postgresql+asyncpg://` for SQLAlchemy.
+* **Vector Store**: [Qdrant Cloud](https://qdrant.tech/) (external managed cluster) connected via `QDRANT_URL` + `QDRANT_API_KEY` config vars.
+
+> **Note:** The `deploy/legacy-droplet/` directory contains the previous DigitalOcean Docker Compose + Nginx setup, kept for reference. It is not used in the current Heroku deployment.
+
+### Deploying to Heroku
+
+```bash
+# One-time setup
+heroku create adra-ai-backend
+heroku stack:set container -a adra-ai-backend
+heroku addons:create heroku-postgresql:essential-0 -a adra-ai-backend
+
+# Sync all config vars from your local .env.prod
+bash scripts/sync-heroku-config.sh adra-ai-backend
+
+# Deploy
+git push heroku main
+
+# Tail logs
+heroku logs --tail -a adra-ai-backend
+```
+
+For the full step-by-step migration runbook, see [heroku.md](heroku.md).
 
 ## Development
 
