@@ -1,6 +1,9 @@
 # Adra-AI
 
 [![Live](https://img.shields.io/badge/Live-https%3A%2F%2Fadra--ai.vercel.app-blue?style=for-the-badge&logo=vercel)](https://adra-ai.vercel.app)
+[![LangSmith](https://img.shields.io/badge/LangSmith-Tracing%20%26%20Observability-orange?style=for-the-badge&logo=langchain)](https://smith.langchain.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent%20Orchestration-purple?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 
 A multi-agent Codebase Intelligence platform that turns natural-language prompts into working codebases or edits existing repositories. Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and LangChain, Adra-AI features a modern web application with real-time updates and operates in a dual-graph workflow architecture:
 
@@ -16,6 +19,7 @@ Adra-AI now features a full SaaS architecture with:
 - **Frontend**: Next.js with React, TypeScript, and Tailwind CSS
 - **Authentication**: OAuth 2.0 (Google & GitHub)
 - **Real-time Updates**: WebSocket support for live progress tracking
+- **Observability**: LangSmith tracing for end-to-end agent pipeline visibility
 - **Deployment**: Docker Compose setup for easy deployment
 
 ### Architecture Diagram
@@ -48,6 +52,10 @@ flowchart TB
         RepoAgent[Repository Agent]
         Explainer[Explainer Agent]
     end
+
+    subgraph Observability["Observability"]
+        LS[LangSmith Tracing]
+    end
     
     UI --> API
     Auth --> OAuth
@@ -58,11 +66,13 @@ flowchart TB
     BGTasks --> Agents
     API --> PG
     RepoAgent --> Qdrant
+    Agents --> LS
     
     style Frontend fill:#e1f5ff
     style Backend fill:#fff4e1
     style Storage fill:#e8f5e9
     style Agents fill:#f3e5f5
+    style Observability fill:#fce4ec
 ```
 
 ## How it works
@@ -150,58 +160,74 @@ flowchart LR
 
 ### Core Features
 - **Dual-Graph Workflow Architecture** — Multi-agent system separating scratch project generation from repository-aware editing to reduce execution complexity
+- **Pydantic-Enforced Structured Outputs** — Every agent uses `llm.with_structured_output(schema, method="json_schema")` to guarantee type-safe, schema-validated LLM responses, eliminating hallucinated or malformed outputs from reaching file I/O
 - **Structured planning** — Pydantic schemas enforcing consistent plans, task breakdowns, and validation
 - **Step-by-step implementation** — Builds each file in dependency order with live context from prior files
 - **Cross-file integration pass** — Post-coder optimization to resolve cross-file import, export, and route mismatch bugs
 - **Context & Token Management** — Smart context truncation (4,000 chars for repo context, 8,000 chars for project context) to prevent token overflow
-- **Throttling & Fault Tolerance** — Custom rate limiting (2.1s minimum interval) and 5x retries to prevent API resource exhaustion
+- **Throttling & Fault Tolerance** — Custom rate limiting (2.1s minimum interval) with exponential back-off and 5x retries to prevent API resource exhaustion
 - **Iterative Loop Limits** — Caps recursion depth at 100 steps to prevent infinite execution loops during agent runs
-- **Pluggable LLM backend** — Swap between Google Gemini, Groq, and NVIDIA NIM models via configuration
+- **Pluggable LLM backend** — Swap between Google Gemini, Groq, and NVIDIA NIM models via a single `LLM_PROVIDER` environment variable
+- **Sandboxed File I/O** — All agent file operations are path-validated within a configurable project root to prevent directory traversal
+
+### Observability & Debugging
+- **LangSmith Integration** — Full end-to-end tracing of every LLM call, agent node transition, tool invocation, and graph traversal across all three pipeline modes. Enables real-time debugging, latency profiling, token usage analysis, and run replay directly from the LangSmith dashboard
+- **OpenTelemetry Support** — Distributed tracing across the FastAPI backend and agent pipeline using `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-grpc` for production observability
+- **Structured Logging** — Centralized `logging` module across all backend modules with standardized JSON error response shapes via `error_handlers.py`
 
 ### Repository-Aware Features
 - **Repository scanning** — Automatically scans repositories for supported file types (Python, JavaScript, TypeScript, HTML, CSS, Markdown, JSON)
-- **Structure-Aware Code Chunking** — Custom syntax-aware chunker supporting 9 file extensions / 7 core programming languages to preserve logical code blocks (AST-based for Python, regex for JS/TS)
+- **Structure-Aware Code Chunking** — Custom syntax-aware chunker supporting 9 file extensions / 7 core programming languages (AST-based for Python, regex for JS/TS)
+- **Whole-file Fallback Chunks** — Files ≤80 lines always receive an additional whole-file chunk to guarantee complete content retrieval for small modules
 - **SHA256 Incremental Indexing** — File hashing pipeline to only re-index new/modified files, optimizing performance and vector store writes
 - **Cost-Optimized Vector Operations** — Avoids duplicate embedding API calls, saving over 90% in costs and time on routine updates
-- **Garbage Collection** — Background tasks to remove orphaned code chunks when files are deleted from the codebase
+- **Garbage Collection** — Background tasks to remove orphaned code chunks when files are deleted from the codebase using symmetric-difference comparison
+- **Google Gemini Embeddings** — Uses `models/gemini-embedding-001` via `GoogleGenerativeAIEmbeddings` for high-quality dense vector representations of code
+- **Deterministic Chunk IDs** — UUID5-based deterministic point IDs ensure idempotent upserts, preventing duplicate vectors on repeated indexing
 - **Embedding generation** — Generates vector embeddings for semantic search
-- **Vector store** — Qdrant-backed persistent storage for code chunks and embeddings
+- **Vector store** — Qdrant-backed persistent storage for code chunks and embeddings with payload indexing on `file_path` for fast filtered deletions
 - **Semantic search** — Retrieves relevant code snippets based on natural language queries
 - **GitHub integration** — Clone and index GitHub repositories automatically
 - **Context-aware planning** — Leverages existing code patterns and structure when planning changes
 
 ### SaaS Platform Features
-- **OAuth authentication** — Secure sign-in with Google and GitHub
-- **User management** — Multi-tenant support with user-specific projects and repositories
-- **Project management** — Create, view, and manage generated projects
+- **OAuth authentication** — Secure sign-in with Google and GitHub; JWTs signed with HS256 via `python-jose` with 24-hour expiry
+- **User management** — Multi-tenant support with user-specific projects and repositories; role-based access (`UserRole.USER` / `UserRole.ADMIN`)
+- **Admin bypass** — Configurable `ADMIN_EMAILS` list to exempt specific accounts from usage quotas
+- **Project management** — Create, view, and manage generated projects; files stored as structured JSON in PostgreSQL
 - **Repository management** — Connect and index multiple repositories
-- **Real-time updates** — WebSocket-based progress tracking for long-running tasks
-- **Background processing** — Async task processing for agent operations
-- **Rate limiting** — Configurable rate limits for API endpoints
-- **Error handling** — Comprehensive error handling and logging
+- **Real-time updates** — WebSocket-based progress tracking for long-running tasks with per-session connection pooling
+- **Background processing** — Async task processing via `ThreadPoolExecutor` bridging the async FastAPI event loop with synchronous LangGraph agents
+- **Async Database** — SQLAlchemy 2.0 async ORM with `asyncpg` driver and proper session lifecycle management
+- **Rate limiting** — Configurable rate limits for API endpoints (auth: 5/min, generation: 2/hr, general API: 60/min)
+- **Error handling** — Comprehensive error handling and logging with standardized JSON error responses for HTTP, validation, SQLAlchemy, and generic exceptions
 
-## Tech stack
+## Tech Stack
 
 | Layer | Tools |
 |-------|-------|
 | Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| Backend | FastAPI, Python 3.12+ |
-| Database | PostgreSQL 16 |
-| Vector Store | Qdrant 1.12.0 |
-| Orchestration | LangGraph, LangChain |
+| Backend | FastAPI, Python 3.12+, SQLAlchemy 2.0 (async) |
+| Database | PostgreSQL 16 + asyncpg |
+| Vector Store | Qdrant 1.12.0 (Cloud) |
+| Orchestration | LangGraph 1.2, LangChain |
 | LLM (default) | Google Gemini 2.5 Flash |
-| LLM (optional) | Groq (`openai/gpt-oss-120b`), NVIDIA NIM (`meta/llama-3.1-70b-instruct`) |
-| Authentication | OAuth 2.0 (Google, GitHub) |
+| LLM (optional) | Groq (`openai/gpt-oss-120b`), NVIDIA NIM (`meta/llama-3.1-8b-instruct`) |
+| Embeddings | Google Gemini Embedding (`models/gemini-embedding-001`) |
+| Observability | LangSmith (tracing & debugging), OpenTelemetry (OTLP/gRPC) |
+| Authentication | OAuth 2.0 (Google, GitHub), JWT (HS256 via python-jose) |
 | Real-time | WebSockets |
-| Deployment | Docker, Docker Compose |
+| Deployment | Docker, Docker Compose, Nginx, Certbot/Let's Encrypt |
 | State Management | Zustand |
 | Data Fetching | TanStack Query |
+| Migrations | Alembic |
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - OAuth credentials (Google and/or GitHub)
 - LLM API keys (Google Gemini, Groq, or other supported providers)
+- (Optional) LangSmith API key for tracing and observability
 
 ## Installation
 
@@ -220,18 +246,10 @@ cp .env.example .env
 
 Open `.env` and fill in your credentials. Refer to [.env.example](.env.example) for descriptions of each environment variable.
 
-**Note**: The PostgreSQL port is mapped to `5433` on the host (from container port `5432`) to avoid conflicts with other PostgreSQL instances. If you need to change this, modify the ports mapping in `docker-compose.yml`.
-
 3. Start all services:
 ```bash
 docker-compose up -d
 ```
-
-This will start:
-- PostgreSQL (port 5433, mapped from container port 5432)
-- Qdrant (port 6333)
-- FastAPI Backend (port 8000)
-- Next.js Frontend (port 3000)
 
 4. Access the application:
 - Frontend: http://localhost:3000
@@ -259,6 +277,29 @@ To configure authentication:
    - Production: `https://adra-ai.vercel.app/auth/[google|github]/callback`
 4. Add the generated credentials to your `.env` file.
 
+## LangSmith Observability
+
+Adra-AI integrates [LangSmith](https://smith.langchain.com) for full end-to-end tracing, debugging, and observability across the entire agentic pipeline.
+
+When enabled, LangSmith automatically captures every step of agent execution:
+- **LLM calls** — inputs, outputs, token counts, and latency for every Gemini/Groq/NVIDIA invocation
+- **Agent node transitions** — full trace of Planner → Architect → Coder → Integrator graph traversal
+- **Tool invocations** — `read_file`, `write_file` calls made by each agent node
+- **Structured output parsing** — validation attempts and schema enforcement for each Pydantic model
+- **Semantic search queries** — repository context retrieved from Qdrant per agent step
+- **Retry attempts** — visibility into rate-limit hits and exponential back-off retries
+
+To enable LangSmith tracing, add the following to your `.env`:
+
+```env
+LANGSMITH_TRACING_V2=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=your-langsmith-api-key
+LANGSMITH_PROJECT=Adra AI
+```
+
+No code changes are required — LangChain and LangGraph automatically pick up these environment variables and route all traces to your LangSmith project dashboard.
+
 ## Advanced Repository Features
 
 ### Structure-Aware Code Chunking
@@ -270,11 +311,22 @@ Replaced naive character-based text splitting with a custom syntax-aware chunker
 - **Markdown**: Section-based chunking by headers.
 - **JSON**: Parser targeting top-level keys.
 - **Generic**: Recursive character splitting with overlap for other files.
+- **Whole-file Chunks**: Files ≤80 lines receive an additional whole-file chunk to guarantee full-content retrieval for small modules.
 
 ### Cost-Optimized Incremental Indexing
 - **SHA256 Incremental Indexing**: Files are hashed using SHA256 to detect local changes.
 - **90%+ Cost Reduction**: By comparing live file hashes against stored vector metadata, unchanged files are completely skipped. This avoids redundant embedding API calls, reducing embedding costs and repository indexing time by over 90% on routine updates.
 - **Garbage Collection of Deleted Code**: Background tasks calculate symmetric differences between directories and vector indexes, executing deletions for orphaned vectors to maintain database hygiene.
+- **Idempotent Upserts**: UUID5-based deterministic point IDs prevent duplicate vectors on repeated indexing runs.
+
+### Pydantic-Enforced Structured Agent Outputs
+Every agent uses `llm.with_structured_output(schema, method="json_schema")` to enforce type-safe responses:
+- `Plan` — Validates app name, description, tech stack, features, and file list
+- `TaskPlan` — Validates ordered implementation steps with file paths and task descriptions
+- `CoderOutput` — Validates complete file content returned by the Coder agent
+- `IntegrationResult` — Validates a list of `FileUpdate` objects for cross-file integration fixes
+
+This prevents hallucinated or malformed responses from reaching file I/O operations.
 
 ## API Documentation
 
@@ -294,12 +346,6 @@ The live project is fully deployed and configured using:
   - **Docker Compose** container network (FastAPI API, PostgreSQL, Qdrant).
   - **Nginx** reverse proxy routing requests and handling WebSockets.
   - **Certbot / Let's Encrypt** for automated SSL/HTTPS.
-
-### Quick Docker Deployment (Local)
-
-```bash
-docker-compose up -d
-```
 
 ## Development
 
@@ -336,23 +382,29 @@ npm test
 ```
 Adra-AI/
 ├── agent/                 # Agent pipeline implementation
-│   ├── graph.py          # LangGraph agent orchestration
-│   ├── llm_client.py     # LLM client with throttling
-│   ├── prompts.py        # Agent prompts
-│   ├── repository/       # Repository-aware features
-│   │   ├── code_aware_chunker.py
-│   │   ├── file_hash.py
-│   │   ├── scanner.py
-│   │   ├── service.py
-│   │   └── vector_store.py
-│   └── tools.py          # File I/O tools
+│   ├── graph.py          # LangGraph orchestration (3 compiled graphs)
+│   ├── llm_client.py     # LLM client with throttling, retries & multi-provider support
+│   ├── prompts.py        # Agent prompt templates (Planner, Architect, Coder, Integrator, Explainer)
+│   ├── state.py          # Pydantic state schemas for type-safe agent I/O
+│   ├── tools.py          # Sandboxed file I/O tools (read_file, write_file, run_cmd)
+│   └── repository/       # Repository-aware RAG pipeline
+│       ├── code_aware_chunker.py  # AST/regex syntax-aware chunker (9 extensions)
+│       ├── embeddings.py          # Google Gemini embedding wrapper with retry handling
+│       ├── file_hash.py           # SHA256 file hashing for incremental indexing
+│       ├── models.py              # CodeChunk and IndexingStats Pydantic models
+│       ├── retriever.py           # Qdrant semantic search retriever
+│       ├── scanner.py             # Repository file scanner (7 languages)
+│       ├── service.py             # Orchestration: index, search, clone GitHub repos
+│       └── vector_store.py       # Qdrant client: upsert, delete, scroll, payload index
 ├── backend/              # FastAPI backend
-│   ├── main.py           # API endpoints
-│   ├── auth.py           # OAuth handlers
-│   ├── db_models.py      # SQLAlchemy models
-│   ├── websocket_manager.py
-│   ├── background_tasks.py
-│   └── services/
+│   ├── main.py           # REST API endpoints + lifespan management
+│   ├── auth.py           # OAuth 2.0 handlers + JWT (HS256) authentication
+│   ├── db_models.py      # SQLAlchemy ORM models (User, Project, Repository, Session)
+│   ├── agent_integration.py  # Bridge layer: agents ↔ database
+│   ├── websocket_manager.py  # WebSocket connection manager + ProgressReporter
+│   ├── background_tasks.py   # Async task executor (ThreadPoolExecutor bridge)
+│   ├── error_handlers.py     # Centralized error handling middleware
+│   └── rate_limit.py         # slowapi rate limiter configuration
 ├── frontend/             # Next.js frontend
 │   ├── app/
 │   ├── components/
@@ -406,6 +458,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## Acknowledgments
 
 - Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and [LangChain](https://github.com/langchain-ai/langchain)
+- Tracing & observability: [LangSmith](https://smith.langchain.com/)
 - LLM providers: [Groq](https://groq.com/), [Google AI](https://ai.google.dev/), and [NVIDIA NIM](https://build.nvidia.com/)
 - Vector storage: [Qdrant](https://qdrant.tech/)
 - Web framework: [FastAPI](https://fastapi.tiangolo.com/) and [Next.js](https://nextjs.org/)
