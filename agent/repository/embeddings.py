@@ -62,9 +62,18 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     )
 
 
-def embed_text(text: str) -> list[float]:
+def embed_text(text: str, *, task_type: str) -> list[float]:
+    """Embed text with an explicit Gemini `task_type`.
+
+    Gemini's embedding model computes different (asymmetric) vectors depending
+    on whether the text is a document being indexed or a query being searched
+    with: use `"RETRIEVAL_DOCUMENT"` for chunk content at index time and
+    `"RETRIEVAL_QUERY"` for search queries. Mixing them up produces poorly
+    calibrated similarity scores. `task_type` is required (no default) so
+    every call site has to make this choice explicitly.
+    """
     try:
-        return embeddings.embed_query(text)
+        return embeddings.embed_query(text, task_type=task_type)
     except Exception as e:
         if _is_rate_limit_error(e):
             logger.error(f"Google GenAI Embeddings Rate Limit / Resource Exhausted (429) hit: {e}")

@@ -74,7 +74,7 @@ def index_chunks(chunks: list[CodeChunk], collection_name: str = None) -> None:
     points = []
     vector_size = None
     for chunk in chunks:
-        vector = embed_text(chunk.content)
+        vector = embed_text(chunk.content, task_type="RETRIEVAL_DOCUMENT")
         if vector_size is None:
             vector_size = len(vector)
         points.append(
