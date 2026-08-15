@@ -1,4 +1,6 @@
 import re
+import logging
+from langsmith import traceable
 from agent.prompts import planner_prompt, architect_prompt, coder_prompt, integrator_prompt, explainer_prompt
 from agent.repository.service import search_repository
 from agent.state import Plan, TaskPlan, CoderState, CoderOutput, IntegrationResult
@@ -6,6 +8,9 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_all_project_files
 from agent.llm_client import structured_invoke, simple_invoke, truncate_for_context, get_stats
+from agent.observability import langfuse_observe
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_markdown_fences(content: str) -> str:
@@ -23,8 +28,11 @@ def _plan_summary(task_plan: TaskPlan) -> str:
     return f"{plan.name} — {plan.description} ({plan.techstack})"
 
 
+@traceable(name="planner_agent", run_type="chain")
+@langfuse_observe("planner_agent", as_type="agent")
 def planner_agent(state: dict) -> dict:
     user_prompt = state["user_prompt"]
+    session_id = state.get("session_id")
 
     retrieved_context = state.get("retrieved_context", "")
     collection_name = state.get("collection_name", None)
@@ -34,7 +42,9 @@ def planner_agent(state: dict) -> dict:
         planner_prompt(
             user_prompt=user_prompt,
             retrieved_context=retrieved_context,
-        )
+        ),
+        agent="planner",
+        session_id=session_id,
     )
 
     # If repository context exists, search for relevant snippets for each file
@@ -52,22 +62,27 @@ def planner_agent(state: dict) -> dict:
                         for r in results
                     )
                     relevant_snippets[file.path] = snippets
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"planner_agent: relevant-snippet search failed for {file.path!r}: {e}")
 
     return {"plan": res, "relevant_code_snippets": relevant_snippets}
 
 
+@traceable(name="architect_agent", run_type="chain")
+@langfuse_observe("architect_agent", as_type="agent")
 def architect_agent(state: dict) -> dict:
     plan: Plan = state["plan"]
-    res = structured_invoke(TaskPlan, architect_prompt(plan))
+    res = structured_invoke(TaskPlan, architect_prompt(plan), agent="architect", session_id=state.get("session_id"))
     res.plan = plan
     relevant_snippets = state.get("relevant_code_snippets", {})
     return {"task_plan": res, "relevant_code_snippets": relevant_snippets}
 
 
+@traceable(name="coder_agent", run_type="chain")
+@langfuse_observe("coder_agent", as_type="agent")
 def coder_agent(state: dict) -> dict:
     coder_state = state.get("coder_state")
+    session_id = state.get("session_id")
 
     if coder_state is None:
         coder_state = CoderState(task_plan=state["task_plan"], current_step_idx=0)
@@ -104,7 +119,7 @@ def coder_agent(state: dict) -> dict:
         repository_context=repository_context,
     )
 
-    result = structured_invoke(CoderOutput, prompt)
+    result = structured_invoke(CoderOutput, prompt, agent="coder", session_id=session_id)
     content = _strip_markdown_fences(result.content)
     write_file.invoke({"path": curr_task.filepath, "content": content})
 
@@ -112,13 +127,15 @@ def coder_agent(state: dict) -> dict:
     return {"coder_state": coder_state}
 
 
+@traceable(name="integrator_agent", run_type="chain")
+@langfuse_observe("integrator_agent", as_type="agent")
 def integrator_agent(state: dict) -> dict:
     task_plan: TaskPlan = state["coder_state"].task_plan
     project_files = read_all_project_files()
     project_files = truncate_for_context(project_files, max_chars=12000)
 
     prompt = integrator_prompt(project_files, _plan_summary(task_plan))
-    result = structured_invoke(IntegrationResult, prompt)
+    result = structured_invoke(IntegrationResult, prompt, agent="integrator", session_id=state.get("session_id"))
 
     for update in result.updates:
         content = _strip_markdown_fences(update.content)
@@ -127,6 +144,8 @@ def integrator_agent(state: dict) -> dict:
     return {"integration_fixes": len(result.updates)}
 
 
+@traceable(name="repository_agent", run_type="chain")
+@langfuse_observe("repository_agent", as_type="retriever")
 def repository_agent(state: dict):
     try:
         collection_name = state.get("collection_name", None)
@@ -139,25 +158,28 @@ def repository_agent(state: dict):
                 {r.content}
             """ for r in results)
 
-    except Exception:
+    except Exception as e:
+        logger.warning(f"repository_agent: context retrieval failed, proceeding without repo context: {e}")
         context = ""
 
     # Preserve existing state keys
     result = {"retrieved_context": context}
-    for key in ["user_prompt", "repo_path", "collection_name"]:
+    for key in ["user_prompt", "repo_path", "collection_name", "session_id"]:
         if key in state:
             result[key] = state[key]
     return result
 
 
+@traceable(name="explainer_agent", run_type="chain")
+@langfuse_observe("explainer_agent", as_type="agent")
 def explainer_agent(state: dict) -> dict:
     """Answer user's question about the codebase using retrieved context."""
     user_question = state["user_prompt"]
     retrieved_context = state.get("retrieved_context", "")
-    
+
     prompt = explainer_prompt(user_question, retrieved_context)
-    answer = simple_invoke(prompt)
-    
+    answer = simple_invoke(prompt, agent="explainer", session_id=state.get("session_id"))
+
     return {"answer": answer}
 
 

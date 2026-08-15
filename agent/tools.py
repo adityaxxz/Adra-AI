@@ -1,8 +1,11 @@
+import logging
 import pathlib
 import subprocess
 from typing import Tuple, Optional
 
 from langchain_core.tools import tool
+
+logger = logging.getLogger(__name__)
 
 # Default project root for project generation mode
 DEFAULT_PROJECT_ROOT = pathlib.Path.cwd() / "generated_projects"
@@ -112,7 +115,7 @@ def read_sibling_files_context(exclude_path: str) -> str:
             if content.strip() and not content.startswith("[Binary file skipped"):
                 parts.append(f"=== {rel_path} ===\n{content}")
         except Exception as e:
-            # Skip files that can't be read
+            logger.warning(f"read_sibling_files_context: skipping unreadable file {rel_path!r}: {e}")
             continue
     return "\n\n".join(parts) if parts else "(no other project files yet)"
 

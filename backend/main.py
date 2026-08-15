@@ -5,11 +5,12 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.exc import SQLAlchemyError
+from prometheus_fastapi_instrumentator import Instrumentator
 from typing import Optional, List
 from pydantic import BaseModel, ValidationError
 import os
@@ -23,7 +24,6 @@ import io
 import shutil
 import logging
 import tempfile
-import traceback
 
 # Load Admin Emails from environment variable (case-insensitive check)
 ADMIN_EMAILS_RAW = os.getenv("ADMIN_EMAILS", "")
@@ -93,8 +93,9 @@ app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 app.add_exception_handler(StarletteHTTPException, not_found_exception_handler)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure structured (JSON) logging with per-run correlation IDs
+from agent.logging_config import configure_logging
+configure_logging(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # CORS middleware
@@ -170,8 +171,33 @@ class GenerationRequest(BaseModel):
 @app.get("/health")
 # @limiter.limit("60/minute")  # TEMPORARILY DISABLED FOR TESTING
 async def health_check(request: Request):
-    """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    """Health check endpoint. Actually probes Postgres and Qdrant instead of
+    returning a static payload, so it can be trusted as a readiness signal."""
+    checks: dict[str, str] = {}
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as e:
+        logger.error(f"Health check: database probe failed: {e}", exc_info=True)
+        checks["database"] = f"error: {e}"
+
+    try:
+        from agent.repository.vector_store import client as qdrant_client
+        await asyncio.to_thread(qdrant_client.get_collections)
+        checks["vector_store"] = "ok"
+    except Exception as e:
+        logger.error(f"Health check: vector store probe failed: {e}", exc_info=True)
+        checks["vector_store"] = f"error: {e}"
+
+    healthy = all(v == "ok" for v in checks.values())
+    body = {
+        "status": "healthy" if healthy else "degraded",
+        "checks": checks,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    return body if healthy else JSONResponse(status_code=503, content=body)
 
 
 # =========================
@@ -387,8 +413,8 @@ async def delete_project(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a project."""
-    print(f"Delete request for project: {project_id}")
-    
+    logger.info(f"Delete request for project: {project_id}")
+
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -396,16 +422,16 @@ async def delete_project(
         )
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
-        print(f"Project not found: {project_id}")
+        logger.warning(f"Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
-    print(f"Deleting project: {project.name}")
-    
+
+    logger.info(f"Deleting project: {project.name}")
+
     try:
         # First, delete all sessions that reference this project
         # This resolves the foreign key constraint issue
@@ -413,22 +439,22 @@ async def delete_project(
             select(Session).where(Session.project_id == project_id)
         )
         sessions = sessions_result.scalars().all()
-        print(f"Found {len(sessions)} sessions to delete")
-        
+        logger.info(f"Found {len(sessions)} sessions to delete")
+
         for session in sessions:
             await db.delete(session)
-            print(f"Deleted session: {session.id}")
-        
+            logger.info(f"Deleted session: {session.id}")
+
         await db.commit()
-        
+
         # Now delete the project
         await db.delete(project)
         await db.commit()
-        
-        print(f"Project deleted successfully: {project_id}")
+
+        logger.info(f"Project deleted successfully: {project_id}")
         return {"message": "Project deleted successfully"}
     except Exception as e:
-        print(f"Error deleting project: {str(e)}")
+        logger.error(f"Error deleting project: {e}", exc_info=True)
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -710,12 +736,12 @@ async def index_repository_endpoint(
             os.makedirs("./temp_repos", exist_ok=True)
             try:
                 repo_path = clone_github_repo(repository.url, local_repo_path)
-                print(f"Cloned repository to: {repo_path}")
+                logger.info(f"Cloned repository to: {repo_path}")
                 # Update the repository's local_path in the database
                 repository.local_path = repo_path
                 await db.commit()
             except Exception as e:
-                print(f"Failed to clone repository: {e}")
+                logger.error(f"Failed to clone repository: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to clone repository: {str(e)}"
@@ -727,7 +753,7 @@ async def index_repository_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Repository URL or local path must be provided"
         )
-    
+
     # Start background indexing task
     try:
         task_result = await task_manager.index_repository_task(
@@ -736,8 +762,7 @@ async def index_repository_endpoint(
             collection_name=repository.collection_name
         )
     except Exception as e:
-        print(f"Error during indexing task: {e}")
-        traceback.print_exc()
+        logger.error(f"Error during indexing task: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Indexing failed: {str(e)}"
@@ -767,8 +792,8 @@ async def delete_repository(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a repository."""
-    print(f"Delete request for repository: {repository_id} by user: {current_user['sub']}")
-    
+    logger.info(f"Delete request for repository: {repository_id} by user: {current_user['sub']}")
+
     result = await db.execute(
         select(Repository).where(
             Repository.id == repository_id,
@@ -776,17 +801,15 @@ async def delete_repository(
         )
     )
     repository = result.scalar_one_or_none()
-    
+
     if not repository:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repository not found"
         )
-    
-    print(f"Deleting repository: {repository.name}")
-    print(f"Local path: {repository.local_path}")
-    print(f"Collection name: {repository.collection_name}")
-    
+
+    logger.info(f"Deleting repository: {repository.name} (local_path={repository.local_path}, collection={repository.collection_name})")
+
     try:
         # First, delete all sessions that reference this repository
         # This resolves the foreign key constraint issue
@@ -794,41 +817,41 @@ async def delete_repository(
             select(Session).where(Session.repository_id == repository_id)
         )
         sessions = sessions_result.scalars().all()
-        print(f"Found {len(sessions)} sessions to delete")
-        
+        logger.info(f"Found {len(sessions)} sessions to delete")
+
         for session in sessions:
             await db.delete(session)
-            print(f"Deleted session: {session.id}")
-        
+            logger.info(f"Deleted session: {session.id}")
+
         await db.commit()
-        
+
         # Delete Qdrant collection if exists
         from agent.repository.vector_store import clear_collection
         try:
             clear_collection(repository.collection_name)
-            print(f"Cleared collection: {repository.collection_name}")
+            logger.info(f"Cleared collection: {repository.collection_name}")
         except Exception as e:
-            print(f"Failed to clear collection: {e}")
-        
+            logger.warning(f"Failed to clear collection: {e}", exc_info=True)
+
         # Delete uploaded files if they exist
         if repository.local_path and repository.provider == 'local':
             try:
                 import shutil
                 if os.path.exists(repository.local_path):
                     shutil.rmtree(repository.local_path)
-                    print(f"Deleted local files: {repository.local_path}")
+                    logger.info(f"Deleted local files: {repository.local_path}")
             except Exception as e:
-                print(f"Failed to delete local files: {e}")
-        
+                logger.warning(f"Failed to delete local files: {e}", exc_info=True)
+
         # Delete repository from database
         await db.delete(repository)
         await db.commit()
-        
-        print("Repository deleted successfully")
-        
+
+        logger.info("Repository deleted successfully")
+
         return {"message": "Repository deleted successfully"}
     except Exception as e:
-        print(f"Error deleting repository: {e}")
+        logger.error(f"Error deleting repository: {e}", exc_info=True)
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1026,9 +1049,9 @@ async def start_generation(
                 os.makedirs("./temp_repos", exist_ok=True)
                 try:
                     repo_path = clone_github_repo(repository.url, local_repo_path)
-                    print(f"Cloned repository to: {repo_path}")
+                    logger.info(f"Cloned repository to: {repo_path}")
                 except Exception as e:
-                    print(f"Failed to clone repository: {e}")
+                    logger.error(f"Failed to clone repository: {e}", exc_info=True)
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to clone repository: {str(e)}"
@@ -1040,7 +1063,7 @@ async def start_generation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository URL or local path must be provided"
             )
-        
+
         task_result = await task_manager.execute_repository_editing(
             session_id=session_id,
             user_prompt=request.prompt,
@@ -1079,7 +1102,7 @@ async def start_generation(
                 try:
                     repo_path = clone_github_repo(repository.url, local_repo_path)
                 except Exception as e:
-                    print(f"Failed to clone repository: {e}")
+                    logger.error(f"Failed to clone repository: {e}", exc_info=True)
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to clone repository: {str(e)}"
@@ -1091,7 +1114,7 @@ async def start_generation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository URL or local path must be provided"
             )
-        
+
         task_result = await task_manager.execute_question_answering(
             session_id=session_id,
             user_prompt=request.prompt,
@@ -1207,6 +1230,13 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
+
+
+# Prometheus metrics: request-level histograms/counters plus the custom LLM
+# token/cost/latency and agent-run counters registered in agent/observability.py
+# (they share the default registry, so they show up on the same /metrics page).
+# Called after all routes are registered so path templates are captured correctly.
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 # =========================

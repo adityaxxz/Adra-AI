@@ -1,7 +1,10 @@
+import logging
 import os
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def patch_google_genai_retries():
@@ -42,7 +45,7 @@ def patch_google_genai_retries():
         google.genai.client.Client.__init__ = new_init
         google.genai.client.Client._retries_patched = True
     except Exception as e:
-        print(f"Warning: Failed to patch google-genai client retries: {e}")
+        logger.warning(f"Failed to patch google-genai client retries: {e}")
 
 # Apply global patch to disable google-genai SDK internal retries
 patch_google_genai_retries()
@@ -64,6 +67,6 @@ def embed_text(text: str) -> list[float]:
         return embeddings.embed_query(text)
     except Exception as e:
         if _is_rate_limit_error(e):
-            print(f"\n[ERROR] Google GenAI Embeddings Rate Limit / Resource Exhausted (429) hit: {e}")
+            logger.error(f"Google GenAI Embeddings Rate Limit / Resource Exhausted (429) hit: {e}")
             raise
         raise

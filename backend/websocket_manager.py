@@ -2,7 +2,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, Set
 import json
 import asyncio
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
@@ -51,7 +54,7 @@ class ConnectionManager:
         try:
             await websocket.send_json(message)
         except Exception as e:
-            print(f"Error sending message to WebSocket: {e}")
+            logger.warning(f"Error sending message to WebSocket: {e}")
     
     async def broadcast_to_session(self, session_id: str, message: dict):
         """Broadcast a message to all connections in a session."""

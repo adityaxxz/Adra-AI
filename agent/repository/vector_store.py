@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from qdrant_client import QdrantClient
@@ -5,6 +6,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, Fi
 from agent.repository.models import CodeChunk
 from agent.repository.embeddings import embed_text
 
+logger = logging.getLogger(__name__)
 
 client = QdrantClient(
     url=os.getenv("QDRANT_URL"),
@@ -122,7 +124,8 @@ def get_file_hashes(collection_name: str = None) -> dict[str, str]:
                 file_hashes[file_path] = file_hash
 
         return file_hashes
-    except Exception:
+    except Exception as e:
+        logger.warning(f"get_file_hashes failed for collection {name!r}, treating as empty: {e}")
         return {}
 
 
@@ -150,7 +153,8 @@ def delete_file_chunks(file_path: str, collection_name: str = None) -> int:
             )
 
         return count
-    except Exception:
+    except Exception as e:
+        logger.warning(f"delete_file_chunks failed for {file_path!r} in collection {name!r}: {e}")
         return 0
 
 
@@ -167,7 +171,8 @@ def get_files_in_collection(collection_name: str = None) -> set[str]:
                 files.add(file_path)
 
         return files
-    except Exception:
+    except Exception as e:
+        logger.warning(f"get_files_in_collection failed for collection {name!r}, treating as empty: {e}")
         return set()
 
 
@@ -187,5 +192,5 @@ def search(query_embedding: list[float], collection_name: str = None, limit: int
             for point in response.points
         ]
     except Exception as e:
-        print(f"Error searching: {e}")
+        logger.error(f"Vector search failed for collection {name!r}: {e}", exc_info=True)
         return []

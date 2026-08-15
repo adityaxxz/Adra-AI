@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import subprocess
 import re
@@ -6,6 +7,8 @@ from agent.repository.chunker import chunk_repository
 from agent.repository.retriever import retrieve
 from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection
 from agent.repository.models import IndexingStats
+
+logger = logging.getLogger(__name__)
 
 #! Orchestration layer for repo aware RAG
 
@@ -42,7 +45,7 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
             stats.files_indexed = len(files)
             stats.chunks_created = len(chunks)
         else:
-            print(f"Warning: No chunks generated from {len(files)} files.")
+            logger.warning(f"No chunks generated from {len(files)} files.")
     else:
         # Incremental indexing
         existing_hashes = get_file_hashes(collection_name)
@@ -91,17 +94,16 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
                 stats.files_indexed = len(files_to_index)
                 stats.chunks_created = len(chunks)
             else:
-                print(f"Warning: No chunks generated for {len(files_to_index)} files. Skipping indexing.")
+                logger.warning(f"No chunks generated for {len(files_to_index)} files. Skipping indexing.")
         
         stats.files_deleted = len(deleted_files)
     
-    # Print statistics
-    print(f"Indexing Statistics for collection '{collection_name}':")
-    print(f"  Files scanned: {stats.files_scanned}")
-    print(f"  Files skipped (unchanged): {stats.files_skipped}")
-    print(f"  Files indexed (new/modified): {stats.files_indexed}")
-    print(f"  Files deleted: {stats.files_deleted}")
-    print(f"  Chunks created: {stats.chunks_created}")
+    logger.info(
+        f"Indexing statistics for collection '{collection_name}': "
+        f"scanned={stats.files_scanned}, skipped={stats.files_skipped}, "
+        f"indexed={stats.files_indexed}, deleted={stats.files_deleted}, "
+        f"chunks_created={stats.chunks_created}"
+    )
     
     return stats
 
@@ -145,7 +147,7 @@ def clone_github_repo(github_url: str, target_dir: str = None) -> str:
             capture_output=True,
             text=True
         )
-        print(f"Successfully cloned {github_url} to {target_path}")
+        logger.info(f"Successfully cloned {github_url} to {target_path}")
         return str(target_path)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to clone repository: {e.stderr}")

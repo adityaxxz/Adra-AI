@@ -1,9 +1,9 @@
 import asyncio
+import logging
 from typing import Dict, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor
 import uuid
 from datetime import datetime
-import traceback
 import sys
 import os
 
@@ -14,6 +14,10 @@ from agent.graph import project_generation_agent, repository_editing_agent, ques
 from agent.repository.service import index_repository, clone_github_repo
 from backend.websocket_manager import ProgressReporter
 from agent.repository.vector_store import set_active_collection
+from agent.observability import start_run, get_current_run, record_agent_run
+from agent.logging_config import bind_run_context, clear_run_context
+
+logger = logging.getLogger(__name__)
 
 
 class BackgroundTaskManager:
@@ -61,19 +65,23 @@ class BackgroundTaskManager:
                 self._run_project_generation_agent,
                 user_prompt,
                 recursion_limit,
-                reporter
+                reporter,
+                session_id
             )
-            
+            metrics = result.pop("_metrics", None)
+            if metrics:
+                logger.info("agent_run_metrics", extra={"session_id": session_id, **metrics})
+
             # Step 3: Integration fixes
             await reporter.step("integration", "...")
             fixes = result.get("integration_fixes", 0)
             if fixes:
                 await reporter.update("integration", f"Applied {fixes} integration fix(es)")
-            
+
             # Step 4: Collect files
             await reporter.step("collecting_files", "...")
             files = self._collect_project_files(project_root)
-            
+
             # Step 5: Complete
             await reporter.step("complete", "...")
             await reporter.agent_update("project_generation_agent", "completed")
@@ -81,44 +89,55 @@ class BackgroundTaskManager:
                 "files": files,
                 "message": "Project generation completed successfully!"
             })
-            
+
+            record_agent_run("generation", "success")
             return {
                 "success": True,
                 "result": result,
                 "files": files,
                 "integration_fixes": fixes,
+                "metrics": metrics,
                 "task_id": task_id
             }
-            
+
         except Exception as e:
+            logger.error(f"Project generation failed: {e}", exc_info=True)
             await reporter.error(f"Project generation failed: {str(e)}")
-            traceback.print_exc()
+            record_agent_run("generation", "failure")
             return {
                 "success": False,
                 "error": str(e),
                 "task_id": task_id
             }
-    
+
     def _run_project_generation_agent(
         self,
         user_prompt: str,
         recursion_limit: int,
-        reporter: ProgressReporter
+        reporter: ProgressReporter,
+        session_id: Optional[str] = None
     ) -> Dict:
-        """Synchronous wrapper for project generation agent."""
+        """Synchronous wrapper for project generation agent. Runs in a worker
+        thread, so the run-correlation context and LLM run metrics are bound
+        here (contextvars don't cross the async->executor thread boundary)."""
+        bind_run_context(session_id=session_id, mode="generation")
+        start_run(session_id=session_id)
         try:
             agent = project_generation_agent
-            initial_state = {"user_prompt": user_prompt}
-            
+            initial_state = {"user_prompt": user_prompt, "session_id": session_id}
+
             result = agent.invoke(
                 initial_state,
                 {"recursion_limit": recursion_limit}
             )
-            
+            run = get_current_run()
+            result["_metrics"] = run.snapshot() if run else None
             return result
         except Exception as e:
-            print(f"Error in project generation agent: {e}")
+            logger.error(f"Error in project generation agent: {e}", exc_info=True)
             raise
+        finally:
+            clear_run_context()
     
     async def execute_repository_editing(
         self,
@@ -157,17 +176,21 @@ class BackgroundTaskManager:
                 user_prompt,
                 repo_path,
                 collection_name,
-                recursion_limit
+                recursion_limit,
+                session_id
             )
-            
+            metrics = result.pop("_metrics", None)
+            if metrics:
+                logger.info("agent_run_metrics", extra={"session_id": session_id, **metrics})
+
             # Step 4: Collect edited files from disk using coder_state step filepaths
             await reporter.step("collecting_changes", "Collecting edited files...")
             edited_files = self._collect_edited_files(result, repo_path)
-            
+
             # Step 5: Complete — broadcast edited files to frontend
             await reporter.step("complete", f"Editing complete. Modified {len(edited_files)} file(s).")
             await reporter.agent_update("repository_editing_agent", "completed")
-            
+
             # Broadcast completion with edited files so frontend can display them
             edited_file_names = list(edited_files.keys())
             summary = f"✅ Done! Edited {len(edited_files)} file(s): {', '.join(edited_file_names)}" if edited_files else "✅ Editing complete."
@@ -176,49 +199,61 @@ class BackgroundTaskManager:
                 "message": summary,
                 "files_changed": edited_file_names
             })
-            
+
+            record_agent_run("editing", "success")
             return {
                 "success": True,
                 "result": result,
                 "edited_files": edited_files,
                 "files_changed": edited_file_names,
+                "metrics": metrics,
                 "task_id": task_id
             }
-            
+
         except Exception as e:
+            logger.error(f"Repository editing failed: {e}", exc_info=True)
             await reporter.error(f"Repository editing failed: {str(e)}")
-            traceback.print_exc()
+            record_agent_run("editing", "failure")
             return {
                 "success": False,
                 "error": str(e),
                 "task_id": task_id
             }
-    
+
     def _run_repository_editing_agent(
         self,
         user_prompt: str,
         repo_path: str,
         collection_name: str,
-        recursion_limit: int
+        recursion_limit: int,
+        session_id: Optional[str] = None
     ) -> Dict:
-        """Synchronous wrapper for repository editing agent."""
+        """Synchronous wrapper for repository editing agent. Runs in a worker
+        thread; see `_run_project_generation_agent` for why context binding
+        happens here rather than in the async caller."""
+        bind_run_context(session_id=session_id, mode="editing")
+        start_run(session_id=session_id)
         try:
             agent = repository_editing_agent
             initial_state = {
                 "user_prompt": user_prompt,
                 "repo_path": repo_path,
-                "collection_name": collection_name
+                "collection_name": collection_name,
+                "session_id": session_id
             }
-            
+
             result = agent.invoke(
                 initial_state,
                 {"recursion_limit": recursion_limit}
             )
-            
+            run = get_current_run()
+            result["_metrics"] = run.snapshot() if run else None
             return result
         except Exception as e:
-            print(f"Error in repository editing agent: {e}")
+            logger.error(f"Error in repository editing agent: {e}", exc_info=True)
             raise
+        finally:
+            clear_run_context()
     
     async def execute_question_answering(
         self,
@@ -244,25 +279,26 @@ class BackgroundTaskManager:
             # Check if repo_path exists
             if not Path(repo_path).exists():
                 error_msg = f"Repository path does not exist: {repo_path}"
-                print(error_msg)
+                logger.error(error_msg)
                 await reporter.error(error_msg)
                 return {"success": False, "error": error_msg, "task_id": task_id}
-            
+
             set_project_root(repo_path)
             set_active_collection(collection_name)
-            print(f"Question answering setup complete for: {repo_path}")
-            
+            logger.info(f"Question answering setup complete for: {repo_path}")
+
             # Step 2: Search relevant code
             await reporter.step("searching", "...")
-            
+
             # Step 3: Run agent
             await reporter.step("agent_execution", "Running question answering agent")
             await reporter.agent_update("question_answering_agent", "started")
-            
-            print(f"Starting question answering agent with prompt: {user_prompt}")
-            print(f"Repository path: {repo_path}")
-            print(f"Collection name: {collection_name}")
-            
+
+            logger.info(
+                "Starting question answering agent",
+                extra={"repo_path": repo_path, "collection_name": collection_name}
+            )
+
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 self.executor,
@@ -270,64 +306,76 @@ class BackgroundTaskManager:
                 user_prompt,
                 repo_path,
                 collection_name,
-                recursion_limit
+                recursion_limit,
+                session_id
             )
-            
-            print(f"Question answering agent completed. Result: {result}")
-            
+            metrics = result.pop("_metrics", None)
+            if metrics:
+                logger.info("agent_run_metrics", extra={"session_id": session_id, **metrics})
+
             # Step 4: Complete
             await reporter.step("complete", "...")
             await reporter.agent_update("question_answering_agent", "completed")
-            
+
             answer = result.get("answer", "No answer generated")
-            print(f"Question answering result: {result}")
-            print(f"Extracted answer: {answer}")
-            print(f"Answer length: {len(answer) if answer else 0}")
-            
+            logger.info(f"Question answering completed, answer length={len(answer) if answer else 0}")
+
             # Send the answer via WebSocket
             await reporter.complete({"answer": answer, "message": answer})
-            
+
+            record_agent_run("qa", "success")
             return {
                 "success": True,
                 "result": result,
                 "answer": answer,
+                "metrics": metrics,
                 "task_id": task_id
             }
-            
+
         except Exception as e:
+            logger.error(f"Question answering failed: {e}", exc_info=True)
             await reporter.error(f"Question answering failed: {str(e)}")
-            traceback.print_exc()
+            record_agent_run("qa", "failure")
             return {
                 "success": False,
                 "error": str(e),
                 "task_id": task_id
             }
-    
+
     def _run_question_answering_agent(
         self,
         user_prompt: str,
         repo_path: str,
         collection_name: str,
-        recursion_limit: int
+        recursion_limit: int,
+        session_id: Optional[str] = None
     ) -> Dict:
-        """Synchronous wrapper for question answering agent."""
+        """Synchronous wrapper for question answering agent. Runs in a worker
+        thread; see `_run_project_generation_agent` for why context binding
+        happens here rather than in the async caller."""
+        bind_run_context(session_id=session_id, mode="qa")
+        start_run(session_id=session_id)
         try:
             agent = question_answering_agent
             initial_state = {
                 "user_prompt": user_prompt,
                 "repo_path": repo_path,
-                "collection_name": collection_name
+                "collection_name": collection_name,
+                "session_id": session_id
             }
-            
+
             result = agent.invoke(
                 initial_state,
                 {"recursion_limit": recursion_limit}
             )
-            
+            run = get_current_run()
+            result["_metrics"] = run.snapshot() if run else None
             return result
         except Exception as e:
-            print(f"Error in question answering agent: {e}")
+            logger.error(f"Error in question answering agent: {e}", exc_info=True)
             raise
+        finally:
+            clear_run_context()
     
     async def index_repository_task(
         self,
@@ -372,14 +420,14 @@ class BackgroundTaskManager:
             }
             
         except Exception as e:
+            logger.error(f"Repository indexing failed: {e}", exc_info=True)
             await reporter.error(f"Repository indexing failed: {str(e)}")
-            traceback.print_exc()
             return {
                 "success": False,
                 "error": str(e),
                 "task_id": task_id
             }
-    
+
     def _collect_edited_files(self, agent_result: Dict, repo_path: str) -> Dict[str, str]:
         """Collect the files that were actually edited/created by the agent."""
         edited_files = {}
@@ -411,8 +459,8 @@ class BackgroundTaskManager:
                 pass
                 
         except Exception as e:
-            print(f"Error collecting edited files: {e}")
-        
+            logger.warning(f"Error collecting edited files: {e}", exc_info=True)
+
         return edited_files
 
     def _collect_project_files(self, project_root: str) -> Dict[str, str]:
@@ -439,7 +487,7 @@ class BackgroundTaskManager:
             
             return files
         except Exception as e:
-            print(f"Error collecting project files: {e}")
+            logger.warning(f"Error collecting project files: {e}", exc_info=True)
             return {}
     
     def get_task_status(self, task_id: str) -> Optional[Dict]:
