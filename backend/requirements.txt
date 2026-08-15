@@ -111,8 +111,8 @@ parso==0.8.7
 passlib==1.7.4
 platformdirs==4.10.0
 portalocker==3.2.0
-prometheus-client==0.21.1
-prometheus-fastapi-instrumentator==7.0.2
+prometheus-client
+prometheus-fastapi-instrumentator
 prompt-toolkit==3.0.52
 propcache==0.5.2
 protobuf==6.33.6
