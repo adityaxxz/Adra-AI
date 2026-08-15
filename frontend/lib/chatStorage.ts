@@ -22,6 +22,12 @@ const STORAGE_KEY = (repoId: string) => `adra_chat_history_${repoId}`;
 const ACTIVE_SESSION_KEY = (repoId: string) => `adra_active_session_${repoId}`;
 const MAX_SESSIONS = 20;
 
+// Raw backend progress-start text that older versions of the app mistakenly
+// saved as chat messages (e.g. "Indexing repository: <path>...",
+// "Processing question: <prompt>..."). Strip these out on read so stale
+// sessions saved before the fix don't keep showing them.
+const STALE_PROGRESS_MESSAGE = /^(Indexing repository|Processing question):/;
+
 /**
  * Get all chat sessions for a repository, ordered newest first.
  */
@@ -31,6 +37,11 @@ export function getChatSessions(repoId: string): ChatSession[] {
     const raw = localStorage.getItem(STORAGE_KEY(repoId));
     if (!raw) return [];
     const sessions: ChatSession[] = JSON.parse(raw);
+    for (const session of sessions) {
+      session.messages = session.messages.filter(
+        (m) => !(m.role === 'assistant' && STALE_PROGRESS_MESSAGE.test(m.content))
+      );
+    }
     return sessions.sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );

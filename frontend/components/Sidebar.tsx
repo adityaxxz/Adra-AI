@@ -171,7 +171,7 @@ function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession,
           {isActiveRepo && onNewChat && (
             <button
               onClick={onNewChat}
-              className="sidebar-chat-item group flex items-center gap-2 text-violet-400 hover:text-violet-300"
+              className="sidebar-chat-item group flex items-center gap-2 text-indigo-400 hover:text-indigo-300"
             >
               <PlusIcon />
               <span>New Chat</span>
@@ -360,7 +360,7 @@ export function Sidebar({
         <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-[var(--bg-hover)] transition-colors group cursor-default">
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold"
-            style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid rgba(139,92,246,0.3)' }}
+            style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid rgba(99,102,241,0.3)' }}
           >
             {user?.name?.[0]?.toUpperCase() || 'U'}
           </div>

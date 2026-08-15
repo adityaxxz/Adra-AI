@@ -7,6 +7,7 @@ interface ChatMessageProps {
   message: ChatMessageType;
   onOpenFile?: (filePath: string, content: string) => void;
   animate?: boolean;
+  userName?: string;
 }
 
 function parseInlineMarkdown(text: string): string {
@@ -45,7 +46,7 @@ function parseMarkdown(content: string): string {
       result.push(
         `<div class="chat-code-block">` +
           `<div class="chat-code-header"><span>${codeLang || 'code'}</span></div>` +
-          `<pre style="padding:1rem;margin:0;overflow-x:auto;"><code style="font-family:monospace;font-size:0.78em;color:#e2e8f0;">${escaped}</code></pre>` +
+          `<pre style="padding:1rem;margin:0;overflow-x:auto;"><code style="font-family:monospace;font-size:1em;color:#e2e8f0;">${escaped}</code></pre>` +
         `</div>`
       );
       continue;
@@ -80,7 +81,7 @@ function parseMarkdown(content: string): string {
     // Blockquote
     else if (line.startsWith('> ')) {
       result.push(
-        `<blockquote style="border-left:3px solid rgba(139,92,246,0.5);padding-left:0.75rem;margin:0.5rem 0;color:var(--text-secondary);">${parseInlineMarkdown(line.slice(2))}</blockquote>`
+        `<blockquote style="border-left:3px solid rgba(99,102,241,0.5);padding-left:0.75rem;margin:0.5rem 0;color:var(--text-secondary);">${parseInlineMarkdown(line.slice(2))}</blockquote>`
       );
     }
     // Empty line
@@ -100,32 +101,28 @@ function parseMarkdown(content: string): string {
   });
 }
 
-function UserAvatar() {
+function UserAvatar({ name }: { name?: string }) {
   return (
     <div
-      className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-bold"
-      style={{ background: 'var(--gradient-primary)', color: '#fff' }}
+      className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold"
+      style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid rgba(99,102,241,0.3)' }}
     >
-      U
+      {name?.[0]?.toUpperCase() || 'U'}
     </div>
   );
 }
 
 function AIAvatar() {
   return (
-    <div
-      className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center"
-      style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)' }}
-    >
-      <svg className="w-4 h-4" style={{ color: '#a78bfa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    </div>
+    <img
+      src="/logo.png"
+      alt="Adra-AI"
+      className="w-7 h-7 rounded-lg shrink-0 object-contain"
+    />
   );
 }
 
-export function ChatMessage({ message, onOpenFile, animate = true }: ChatMessageProps) {
+export function ChatMessage({ message, onOpenFile, animate = true, userName }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasEditedFiles = message.editedFiles && Object.keys(message.editedFiles).length > 0;
 
@@ -133,7 +130,7 @@ export function ChatMessage({ message, onOpenFile, animate = true }: ChatMessage
     <div
       className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} ${animate ? 'animate-fade-in-up' : ''}`}
     >
-      {isUser ? <UserAvatar /> : <AIAvatar />}
+      {isUser ? <UserAvatar name={userName} /> : <AIAvatar />}
 
       <div className={`flex flex-col gap-2 ${isUser ? 'items-end' : 'items-start'} max-w-[94%]`}>
         {/* Message bubble */}
@@ -155,20 +152,20 @@ export function ChatMessage({ message, onOpenFile, animate = true }: ChatMessage
           <div
             className="rounded-xl overflow-hidden text-xs"
             style={{
-              background: 'rgba(139,92,246,0.05)',
-              border: '1px solid rgba(139,92,246,0.2)',
+              background: 'rgba(99,102,241,0.05)',
+              border: '1px solid rgba(99,102,241,0.2)',
               maxWidth: '100%',
             }}
           >
             <div
               className="flex items-center gap-2 px-4 py-2.5"
-              style={{ borderBottom: '1px solid rgba(139,92,246,0.15)', background: 'rgba(139,92,246,0.08)' }}
+              style={{ borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(99,102,241,0.08)' }}
             >
-              <svg className="w-3.5 h-3.5" style={{ color: '#a78bfa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-              <span className="font-semibold" style={{ color: '#c4b5fd' }}>
+              <span className="font-semibold" style={{ color: '#a5b4fc' }}>
                 Edited {Object.keys(message.editedFiles!).length} file{Object.keys(message.editedFiles!).length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -183,13 +180,13 @@ export function ChatMessage({ message, onOpenFile, animate = true }: ChatMessage
                     className="flex items-center justify-between px-3 py-2"
                     style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.03)' }}
                   >
-                    <span className="font-mono font-semibold truncate" style={{ color: '#a78bfa', maxWidth: '70%' }}>
+                    <span className="font-mono font-semibold truncate" style={{ color: '#818cf8', maxWidth: '70%' }}>
                       {filePath}
                     </span>
                     {onOpenFile && (
                       <button
                         onClick={() => onOpenFile(filePath, content)}
-                        className="shrink-0 hover:text-violet-300 transition-colors ml-2"
+                        className="shrink-0 hover:text-indigo-300 transition-colors ml-2"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         Open ↗
@@ -221,9 +218,12 @@ export function TypingIndicator() {
     <div className="flex gap-3 animate-fade-in">
       <AIAvatar />
       <div className="chat-bubble-assistant flex items-center gap-2 py-3 px-4">
-        <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
-        <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
-        <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
+        <span style={{ color: 'var(--text-secondary)' }}>Thinking</span>
+        <div className="flex items-center gap-1">
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+        </div>
       </div>
     </div>
   );

@@ -89,7 +89,7 @@ export default function Home() {
   const getBadgeStyles = (agent: string) => {
     switch (agent) {
       case "planner":
-        return { text: "planner", className: "bg-[rgba(167,139,250,0.1)] text-[#a78bfa] border-[rgba(167,139,250,0.2)] font-mono" };
+        return { text: "planner", className: "bg-[rgba(129,140,248,0.1)] text-[#818cf8] border-[rgba(129,140,248,0.2)] font-mono" };
       case "architect":
         return { text: "architect", className: "bg-[rgba(0,229,160,0.1)] text-[#00e5a0] border-[rgba(0,229,160,0.2)] font-mono" };
       case "coder":
@@ -107,12 +107,12 @@ export default function Home() {
 
   return (
     <div
-      className="min-h-screen flex flex-col relative overflow-hidden font-body selection:bg-[#a78bfa]/30 selection:text-white"
+      className="min-h-screen flex flex-col relative overflow-hidden font-body selection:bg-[#818cf8]/30 selection:text-white"
       style={{ background: "#090910", color: "#f0f0f5" }}
     >
       {/* Subtle background glow highlights */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-violet-900/10 filter blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-[#a78bfa]/5 filter blur-[150px] pointer-events-none" />
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-900/10 filter blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-[#818cf8]/5 filter blur-[150px] pointer-events-none" />
 
       {/* Navigation */}
       <nav
@@ -157,7 +157,7 @@ export default function Home() {
           <br />
           Most AI agents ignore it.
           <br />
-          <span className="text-[#a78bfa] drop-shadow-[0_0_15px_rgba(167,139,250,0.15)]">Adra-AI doesn't.</span>
+          <span className="text-[#818cf8] drop-shadow-[0_0_15px_rgba(129,140,248,0.15)]">Adra-AI doesn't.</span>
         </h1>
 
         {/* Subheadline */}
@@ -172,7 +172,6 @@ export default function Home() {
               href="/dashboard"
               className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
               id="hero-cta-dashboard"
-              style={{ background: "linear-gradient(135deg, #a78bfa 0%, #6366f1 100%)" }}
             >
               View Your Dashboard
               <ArrowRight className="w-4 h-4" />
@@ -182,7 +181,6 @@ export default function Home() {
               href="/auth/signin"
               className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
               id="hero-cta-start"
-              style={{ background: "linear-gradient(135deg, #a78bfa 0%, #6366f1 100%)" }}
             >
               Start Building Free
               <ArrowRight className="w-4 h-4" />
@@ -210,7 +208,7 @@ export default function Home() {
             <div className="text-xs text-[#6b6b80] mt-1 font-mono">from SHA256 incremental indexing</div>
           </div>
           <div className="text-center p-4 border-r border-[#1f1f2e] max-lg:border-r-0 max-sm:border-b last:border-b-0 last:border-r-0">
-            <div className="text-3xl font-extrabold text-[#a78bfa] font-mono tracking-tight">7+</div>
+            <div className="text-3xl font-extrabold text-[#818cf8] font-mono tracking-tight">7+</div>
             <div className="text-sm font-semibold text-[#f0f0f5] mt-1.5 font-body">Languages Supported</div>
             <div className="text-xs text-[#6b6b80] mt-1 font-mono">including Python, TS, JS, Go</div>
           </div>
@@ -237,7 +235,7 @@ export default function Home() {
                 <span className="w-3 h-3 rounded-full bg-[#00e5a0]" />
               </div>
               <div className="text-xs font-mono text-[#6b6b80] select-none flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-[#a78bfa]" />
+                <Terminal className="w-3.5 h-3.5 text-[#818cf8]" />
                 agent_execution_trace.sh
               </div>
               <div className="w-12" />
@@ -269,8 +267,8 @@ export default function Home() {
                   );
                 })}
                 {currentStep < TERMINAL_STEPS.length - 1 ? (
-                  <div className="flex items-center gap-2 text-[#a78bfa] text-xs pt-2 animate-pulse font-mono">
-                    <span className="w-1.5 h-3 bg-[#a78bfa]" />
+                  <div className="flex items-center gap-2 text-[#818cf8] text-xs pt-2 animate-pulse font-mono">
+                    <span className="w-1.5 h-3 bg-[#818cf8]" />
                     <span>Agent execution in progress...</span>
                   </div>
                 ) : (
@@ -287,7 +285,7 @@ export default function Home() {
         {/* Problem Section */}
         {/* <div className="w-full max-w-5xl mx-auto mb-32 px-4 text-left"> */}
           {/* <div className="text-center mb-16"> */}
-            {/* <span className="text-xs font-mono font-bold tracking-widest text-[#a78bfa] uppercase px-3 py-1 rounded-full border border-[#a78bfa]/20 bg-[#a78bfa]/5">
+            {/* <span className="text-xs font-mono font-bold tracking-widest text-[#818cf8] uppercase px-3 py-1 rounded-full border border-[#818cf8]/20 bg-[#818cf8]/5">
               The Problem
             </span> */}
             {/* <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mt-4 font-heading tracking-tight">
@@ -331,8 +329,8 @@ export default function Home() {
             </div> */}
 
             {/* Card 3 - Good */}
-            {/* <div className="card p-6 border border-[#a78bfa]/30 hover:border-[#a78bfa] shadow-[0_0_20px_rgba(167,139,250,0.05)] hover:shadow-[0_0_30px_rgba(167,139,250,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[#a78bfa]/5 rounded-full filter blur-xl pointer-events-none" />
+            {/* <div className="card p-6 border border-[#818cf8]/30 hover:border-[#818cf8] shadow-[0_0_20px_rgba(129,140,248,0.05)] hover:shadow-[0_0_30px_rgba(129,140,248,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#818cf8]/5 rounded-full filter blur-xl pointer-events-none" />
               <div>
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-xs font-mono text-[#00e5a0] uppercase tracking-widest font-bold px-2 py-0.5 rounded border border-[#00e5a0]/30 bg-[#00e5a0]/10">
@@ -341,7 +339,7 @@ export default function Home() {
                   <Check className="w-4 h-4 text-[#00e5a0]" />
                 </div>
                 <h3 className="text-xl font-bold text-white font-heading mb-1">Adra-AI</h3>
-                <h4 className="text-sm font-semibold text-[#a78bfa] font-body mb-3">AST-guided code-aware chunking</h4>
+                <h4 className="text-sm font-semibold text-[#818cf8] font-body mb-3">AST-guided code-aware chunking</h4>
                 <p className="text-sm text-[#f0f0f5] leading-relaxed font-body">
                   Our Repository Agent scans, parses, and indexes your entire codebase into Qdrant using AST-guided, code-aware chunking. By respecting class, function, and import boundaries, we preserve the logical context of your files.
                 </p>
@@ -349,8 +347,8 @@ export default function Home() {
             </div> */}
 
             {/* Card 4 - Good */}
-            {/* <div className="card p-6 border border-[#a78bfa]/30 hover:border-[#a78bfa] shadow-[0_0_20px_rgba(167,139,250,0.05)] hover:shadow-[0_0_30px_rgba(167,139,250,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[#a78bfa]/5 rounded-full filter blur-xl pointer-events-none" />
+            {/* <div className="card p-6 border border-[#818cf8]/30 hover:border-[#818cf8] shadow-[0_0_20px_rgba(129,140,248,0.05)] hover:shadow-[0_0_30px_rgba(129,140,248,0.15)] transition-all duration-300 bg-[#111119] flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#818cf8]/5 rounded-full filter blur-xl pointer-events-none" />
               <div>
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-xs font-mono text-[#00e5a0] uppercase tracking-widest font-bold px-2 py-0.5 rounded border border-[#00e5a0]/30 bg-[#00e5a0]/10">
@@ -359,7 +357,7 @@ export default function Home() {
                   <Check className="w-4 h-4 text-[#00e5a0]" />
                 </div>
                 <h3 className="text-xl font-bold text-white font-heading mb-1">Adra-AI</h3>
-                <h4 className="text-sm font-semibold text-[#a78bfa] font-body mb-3">Specialized agent pipeline</h4>
+                <h4 className="text-sm font-semibold text-[#818cf8] font-body mb-3">Specialized agent pipeline</h4>
                 <p className="text-sm text-[#f0f0f5] leading-relaxed font-body">
                   Planning, architecture design, coding, and integration are split across distinct, specialized LangGraph agents. Each has its own state and specific scope, eliminating model overload.
                 </p>
@@ -381,9 +379,9 @@ export default function Home() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Card 1 - Project Generation */}
-            <div className="card p-6 border border-[#1f1f2e] border-t-2 border-t-[#a78bfa]/30 hover:border-[#a78bfa] hover:shadow-[0_0_25px_rgba(167,139,250,0.1)] transition-all duration-300 bg-[#111119] flex flex-col justify-between min-h-[320px]">
+            <div className="card p-6 border border-[#1f1f2e] border-t-2 border-t-[#818cf8]/30 hover:border-[#818cf8] hover:shadow-[0_0_25px_rgba(129,140,248,0.1)] transition-all duration-300 bg-[#111119] flex flex-col justify-between min-h-[320px]">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-[#a78bfa]/10 border border-[#a78bfa]/20 flex items-center justify-center text-[#a78bfa] mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#818cf8]/10 border border-[#818cf8]/20 flex items-center justify-center text-[#818cf8] mb-4">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <h3 className="text-xl font-bold text-white font-heading mb-2">Project Generation</h3>
@@ -395,16 +393,16 @@ export default function Home() {
                 <div className="text-[10px] uppercase font-bold tracking-wider text-[#6b6b80] font-mono mb-2">
                   Pipeline Trace
                 </div>
-                <div className="text-[10px] sm:text-xs font-mono text-[#a78bfa] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
+                <div className="text-[10px] sm:text-xs font-mono text-[#818cf8] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
                   Planner → Architect → Coder → Integrator
                 </div>
               </div>
             </div>
 
             {/* Card 2 - Repository Editing */}
-            <div className="card p-6 border border-[#1f1f2e] border-t-2 border-t-[#a78bfa]/30 hover:border-[#a78bfa] hover:shadow-[0_0_25px_rgba(167,139,250,0.1)] transition-all duration-300 bg-[#111119] flex flex-col justify-between min-h-[320px]">
+            <div className="card p-6 border border-[#1f1f2e] border-t-2 border-t-[#818cf8]/30 hover:border-[#818cf8] hover:shadow-[0_0_25px_rgba(129,140,248,0.1)] transition-all duration-300 bg-[#111119] flex flex-col justify-between min-h-[320px]">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-[#a78bfa]/10 border border-[#a78bfa]/20 flex items-center justify-center text-[#a78bfa] mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#818cf8]/10 border border-[#818cf8]/20 flex items-center justify-center text-[#818cf8] mb-4">
                   <Code className="w-5 h-5" />
                 </div>
                 <h3 className="text-xl font-bold text-white font-heading mb-2">Repository Editing</h3>
@@ -416,16 +414,16 @@ export default function Home() {
                 <div className="text-[10px] uppercase font-bold tracking-wider text-[#6b6b80] font-mono mb-2">
                   Pipeline Trace
                 </div>
-                <div className="text-[10px] sm:text-xs font-mono text-[#a78bfa] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
+                <div className="text-[10px] sm:text-xs font-mono text-[#818cf8] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
                   Repository Agent → Planner → Coder → Integrator
                 </div>
               </div>
             </div>
 
             {/* Card 3 - Codebase Q&A */}
-            <div className="card p-6 border border-[#1f1f2e] border-t-2 border-t-[#a78bfa]/30 hover:border-[#a78bfa] hover:shadow-[0_0_25px_rgba(167,139,250,0.1)] transition-all duration-300 bg-[#111119] flex flex-col justify-between min-h-[320px]">
+            <div className="card p-6 border border-[#1f1f2e] border-t-2 border-t-[#818cf8]/30 hover:border-[#818cf8] hover:shadow-[0_0_25px_rgba(129,140,248,0.1)] transition-all duration-300 bg-[#111119] flex flex-col justify-between min-h-[320px]">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-[#a78bfa]/10 border border-[#a78bfa]/20 flex items-center justify-center text-[#a78bfa] mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#818cf8]/10 border border-[#818cf8]/20 flex items-center justify-center text-[#818cf8] mb-4">
                   <Search className="w-5 h-5" />
                 </div>
                 <h3 className="text-xl font-bold text-white font-heading mb-2">Codebase Q&A</h3>
@@ -437,7 +435,7 @@ export default function Home() {
                 <div className="text-[10px] uppercase font-bold tracking-wider text-[#6b6b80] font-mono mb-2">
                   Pipeline Trace
                 </div>
-                <div className="text-[10px] sm:text-xs font-mono text-[#a78bfa] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
+                <div className="text-[10px] sm:text-xs font-mono text-[#818cf8] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
                   Repository Agent → Explainer
                 </div>
               </div>
@@ -464,7 +462,7 @@ export default function Home() {
                 <tr className="border-b border-[#1f1f2e] bg-[#090910]/80">
                   <th className="p-4 sm:p-5 font-heading font-extrabold text-white">Capability</th>
                   <th className="p-4 sm:p-5 font-heading font-semibold text-[#6b6b80]">Generic RAG / Chatbot</th>
-                  <th className="p-4 sm:p-5 font-heading font-bold text-[#a78bfa] bg-[#a78bfa]/5">Adra-AI</th>
+                  <th className="p-4 sm:p-5 font-heading font-bold text-[#818cf8] bg-[#818cf8]/5">Adra-AI</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1f1f2e]/60 font-body">
@@ -477,9 +475,9 @@ export default function Home() {
                       Sliding window context only
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       Full AST-parsed, semantically indexed repository
                     </span>
                   </td>
@@ -493,9 +491,9 @@ export default function Home() {
                       Re-embeds everything on each run
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       SHA256 hash-based incremental indexing - 90%+ cost reduction
                     </span>
                   </td>
@@ -509,9 +507,9 @@ export default function Home() {
                       Naive character counts (cuts functions and classes in half)
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       Supports 7+ languages with code-aware chunking (respects class & function boundaries)
                     </span>
                   </td>
@@ -525,9 +523,9 @@ export default function Home() {
                       One model, one pass
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       5 specialized LangGraph agents with typed state propagation
                     </span>
                   </td>
@@ -542,9 +540,9 @@ export default function Home() {
                       No cross-file validation
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       Integrator agent does a full codebase validation pass post-generation
                     </span>
                   </td>
@@ -558,9 +556,9 @@ export default function Home() {
                       Spinner until done
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       WebSocket-streamed per-agent execution logs to UI in real time
                     </span>
                   </td>
@@ -574,9 +572,9 @@ export default function Home() {
                       Single-user demo
                     </span>
                   </td>
-                  <td className="p-4 sm:p-5 text-[#a78bfa] font-medium bg-[#a78bfa]/5">
+                  <td className="p-4 sm:p-5 text-[#818cf8] font-medium bg-[#818cf8]/5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0 text-[#a78bfa]" />
+                      <Check className="w-4 h-4 shrink-0 text-[#818cf8]" />
                       PostgreSQL-backed user isolation with OAuth and project management
                     </span>
                   </td>
@@ -600,7 +598,7 @@ export default function Home() {
                 name: "LangGraph",
                 role: "Agent orchestration",
                 desc: "Manages cyclic graphs, loops, and agent shared state with full conditional branching controls.",
-                icon: <Workflow className="w-5 h-5 text-[#a78bfa]" />,
+                icon: <Workflow className="w-5 h-5 text-[#818cf8]" />,
               },
               {
                 name: "Qdrant",
@@ -618,7 +616,7 @@ export default function Home() {
                 name: "Next.js 14",
                 role: "Frontend App Router",
                 desc: "React server components render fast layouts. Handles auth and streams WebSocket updates.",
-                icon: <Layers className="w-5 h-5 text-[#a78bfa]" />,
+                icon: <Layers className="w-5 h-5 text-[#818cf8]" />,
               },
               {
                 name: "Gemini + Groq API Models",
@@ -636,7 +634,7 @@ export default function Home() {
                 name: "Docker",
                 role: "Containerized deploy",
                 desc: "Guarantees reproducible runtime execution across local, staging, and production environments.",
-                icon: <Boxes className="w-5 h-5 text-[#a78bfa]" />,
+                icon: <Boxes className="w-5 h-5 text-[#818cf8]" />,
               },
               {
                 name: "OAuth 2.0",
@@ -647,7 +645,7 @@ export default function Home() {
             ].map((tech, i) => (
               <div
                 key={i}
-                className="card p-5 border border-[#1f1f2e] bg-[#111119] hover:border-[#a78bfa]/40 transition-all duration-200 flex flex-col justify-between"
+                className="card p-5 border border-[#1f1f2e] bg-[#111119] hover:border-[#818cf8]/40 transition-all duration-200 flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -681,7 +679,7 @@ export default function Home() {
             href="https://github.com/adityaxxz/Adra-AI"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 text-zinc-300 hover:text-white bg-zinc-950/40 hover:bg-violet-950/20 border-zinc-800 hover:border-violet-500/40 hover:shadow-[0_0_12px_rgba(167,139,250,0.15)]"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 text-zinc-300 hover:text-white bg-zinc-950/40 hover:bg-indigo-950/20 border-zinc-800 hover:border-indigo-500/40 hover:shadow-[0_0_12px_rgba(129,140,248,0.15)]"
           >
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
               <path

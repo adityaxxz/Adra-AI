@@ -56,13 +56,13 @@ function GitHubCallbackContent() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden select-none cursor-default">
       {/* Background gradient effect */}
-      <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
+      <div className="absolute inset-0 bg-gradient-to-b from-indigo-600/5 via-transparent to-transparent"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-600/10 rounded-full blur-[120px]"></div>
       
       <div className="card p-8 max-w-md w-full mx-4 relative z-10">
         {(status === 'loading' || status === 'success') && (
           <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-500 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500 mx-auto mb-4"></div>
             <p className="text-zinc-400 text-sm font-medium">Loading dashboard...</p>
           </div>
         )}
@@ -76,7 +76,7 @@ function GitHubCallbackContent() {
             <p className="text-zinc-400 text-sm mb-4">{error}</p>
             <button
               onClick={() => router.push('/auth/signin')}
-              className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-medium rounded-lg transition-all duration-200"
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white font-medium rounded-lg transition-all duration-200"
             >
               Try Again
             </button>
@@ -92,9 +92,9 @@ export default function GitHubCallback() {
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden select-none cursor-default">
         {/* Background gradient effect */}
-        <div className="absolute inset-0 bg-gradient-to-b from-violet-600/5 via-transparent to-transparent"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-violet-600/10 rounded-full blur-[120px]"></div>
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 relative z-10"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-indigo-600/5 via-transparent to-transparent"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-600/10 rounded-full blur-[120px]"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 relative z-10"></div>
       </div>
     }>
       <GitHubCallbackContent />

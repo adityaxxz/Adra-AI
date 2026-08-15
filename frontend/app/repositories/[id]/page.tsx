@@ -170,17 +170,14 @@ function RepositoryPageInner() {
 
     // Chat messages
     if (mode === 'ask') {
-      const answer = latestMessage.message || latestMessage.data?.answer ||
-        latestMessage.result?.answer || latestMessage.data?.message || latestMessage.result?.message;
-      if (answer && answer !== 'No response' && answer.length > 5) {
-        addAssistantMessage(String(answer));
+      if (latestMessage.type === 'complete') {
+        const answer = latestMessage.result?.answer || latestMessage.result?.message ||
+          latestMessage.data?.answer || latestMessage.data?.message || latestMessage.message;
+        if (answer && answer !== 'No response' && answer !== 'Question answered') {
+          addAssistantMessage(String(answer));
+        }
       } else if (latestMessage.type === 'error') {
         addAssistantMessage(`Error: ${latestMessage.error || 'Unknown error'}`);
-      } else if (latestMessage.step === 'answer' && latestMessage.message) {
-        addAssistantMessage(String(latestMessage.message));
-      } else if (latestMessage.type === 'complete') {
-        const content = latestMessage.message || latestMessage.result?.message || latestMessage.result?.answer;
-        if (content && content !== 'Question answered') addAssistantMessage(String(content));
       }
     } else if (mode === 'editor') {
       if (latestMessage.type === 'complete') {
@@ -345,7 +342,7 @@ function RepositoryPageInner() {
     return (
       <div className="loading-screen">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-t-violet-500 border-violet-500/20 animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-t-indigo-500 border-indigo-500/20 animate-spin" />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading repository…</p>
         </div>
       </div>
@@ -419,8 +416,8 @@ function RepositoryPageInner() {
                 onClick={() => setShowDirectory(d => !d)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 ${
                   showDirectory
-                    ? 'bg-violet-600 border-violet-500 text-white hover:bg-violet-700'
-                    : 'bg-[#a78bfa]/10 hover:bg-[#a78bfa]/20 border-[#a78bfa]/40 hover:border-[#a78bfa] text-[#a78bfa] hover:text-white'
+                    ? 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-700'
+                    : 'bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white'
                 }`}
                 id="toggle-file-tree"
               >
@@ -451,13 +448,13 @@ function RepositoryPageInner() {
         {(isIndexing || !repository.is_indexed) && (
           <div
             className="shrink-0 px-6 py-3 border-b flex items-center gap-4"
-            style={{ background: 'rgba(139,92,246,0.05)', borderColor: 'rgba(139,92,246,0.15)' }}
+            style={{ background: 'rgba(99,102,241,0.05)', borderColor: 'rgba(99,102,241,0.15)' }}
           >
-            <div className="w-5 h-5 rounded-full border-2 border-t-violet-400 border-violet-400/20 animate-spin shrink-0" />
+            <div className="w-5 h-5 rounded-full border-2 border-t-indigo-400 border-indigo-400/20 animate-spin shrink-0" />
             <div className="flex-1 min-w-0">
               {isIndexing ? (
                 <div>
-                  <p className="text-xs font-medium" style={{ color: '#a78bfa' }}>Indexing repository…</p>
+                  <p className="text-xs font-medium" style={{ color: '#818cf8' }}>Indexing repository…</p>
                   {latestMessage && (
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                       {latestMessage.step === 'scanning' && 'Scanning files…'}
@@ -470,7 +467,7 @@ function RepositoryPageInner() {
                     </p>
                   )}
                   {latestMessage?.progress !== undefined && (
-                    <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(139,92,246,0.15)' }}>
+                    <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(99,102,241,0.15)' }}>
                       <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{ background: 'var(--accent)', width: `${latestMessage.progress}%` }}
@@ -481,7 +478,7 @@ function RepositoryPageInner() {
               ) : (
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   This repository hasn't been indexed yet.{' '}
-                  <button onClick={handleStartIndexing} className="text-violet-400 hover:text-violet-300 underline">
+                  <button onClick={handleStartIndexing} className="text-indigo-400 hover:text-indigo-300 underline">
                     Start indexing
                   </button>
                 </p>
@@ -533,9 +530,9 @@ function RepositoryPageInner() {
               <div className="flex flex-col items-center justify-center h-full text-center pb-20 animate-fade-in">
                 <div
                   className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-                  style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)' }}
+                  style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)' }}
                 >
-                  <svg className="w-8 h-8" style={{ color: '#a78bfa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-8 h-8" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
@@ -597,6 +594,7 @@ function RepositoryPageInner() {
                     setSelectedFileContent(content);
                   }}
                   animate={idx === currentSession.messages.length - 1}
+                  userName={user?.name}
                 />
               ))
             )}
@@ -709,7 +707,7 @@ function RepositoryPageInner() {
               className="flex items-center justify-between px-5 py-4 border-b shrink-0"
               style={{ borderColor: 'var(--border)' }}
             >
-              <span className="text-sm font-mono font-semibold truncate" style={{ color: '#a78bfa' }}>{selectedFile}</span>
+              <span className="text-sm font-mono font-semibold truncate" style={{ color: '#818cf8' }}>{selectedFile}</span>
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 <button
                   onClick={async () => {
@@ -719,7 +717,7 @@ function RepositoryPageInner() {
                       setTimeout(() => setCopied(false), 2000);
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#a78bfa]/10 hover:bg-[#a78bfa]/20 border-[#a78bfa]/40 hover:border-[#a78bfa] text-[#a78bfa] hover:text-white"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white"
                 >
                   {copied ? (
                     <>
@@ -785,7 +783,7 @@ function RepositoryPageInner() {
                 
                 <div className="space-y-2">
                   <label className="block text-xs font-medium text-white select-text">
-                    Please type "<strong className="text-[#a78bfa]">{repository.name}</strong>" to confirm:
+                    Please type "<strong className="text-[#818cf8]">{repository.name}</strong>" to confirm:
                   </label>
                   <input
                     type="text"
@@ -833,7 +831,7 @@ export default function RepositoryPage() {
     <Suspense fallback={
       <div className="loading-screen">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-t-violet-500 border-violet-500/20 animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-t-indigo-500 border-indigo-500/20 animate-spin" />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading repository…</p>
         </div>
       </div>

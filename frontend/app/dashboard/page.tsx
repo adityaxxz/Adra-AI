@@ -149,7 +149,7 @@ export default function Dashboard() {
     return (
       <div className="loading-screen">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-t-violet-500 border-violet-500/20 animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-t-indigo-500 border-indigo-500/20 animate-spin" />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading workspace…</p>
         </div>
       </div>
@@ -195,9 +195,9 @@ export default function Dashboard() {
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 transition-colors"
                 style={{
-                  background: 'rgba(139,92,246,0.1)',
-                  border: '1px solid rgba(139,92,246,0.2)',
-                  color: '#a78bfa',
+                  background: 'rgba(99,102,241,0.1)',
+                  border: '1px solid rgba(99,102,241,0.2)',
+                  color: '#818cf8',
                 }}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -219,9 +219,9 @@ export default function Dashboard() {
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
                 style={{
-                  background: 'rgba(99,102,241,0.1)',
-                  border: '1px solid rgba(99,102,241,0.2)',
-                  color: '#818cf8',
+                  background: 'rgba(96,165,250,0.1)',
+                  border: '1px solid rgba(96,165,250,0.2)',
+                  color: '#60a5fa',
                 }}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -240,7 +240,7 @@ export default function Dashboard() {
           <section className="mb-10">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <svg className="w-4 h-4" style={{ color: '#a78bfa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
@@ -282,7 +282,7 @@ export default function Dashboard() {
                     <div className="flex items-start justify-between">
                       <div
                         className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', color: '#a78bfa' }}
+                        style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8' }}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -312,7 +312,7 @@ export default function Dashboard() {
           <section>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <svg className="w-4 h-4" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" style={{ color: '#60a5fa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
@@ -353,7 +353,7 @@ export default function Dashboard() {
                   >
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8' }}
+                      style={{ background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa' }}
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

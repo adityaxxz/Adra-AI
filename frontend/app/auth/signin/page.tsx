@@ -42,7 +42,7 @@ export default function SignInPage() {
           <div className="text-center mb-8">
             <div
               className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
-              style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)' }}
+              style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}
             >
               <img src="/logo.png" alt="Adra-AI" className="w-8 h-8 rounded-lg object-contain" />
             </div>
