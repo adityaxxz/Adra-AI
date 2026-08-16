@@ -1,0 +1,40 @@
+# Dev dependencies — NOT deployed to Heroku
+# Install with: uv pip install -r requirements-dev.txt
+-r requirements.txt
+
+# ── Jupyter / IPython ──────────────────────────────────────────────────────────
+ipython==9.14.0
+ipykernel==7.2.0
+ipython-pygments-lexers==1.1.1
+jupyter-client==8.8.0
+jupyter-core==5.9.1
+comm==0.2.3
+traitlets==5.15.0
+tornado==6.5.6
+pyzmq==27.1.0
+matplotlib-inline==0.2.2
+parso==0.8.7
+jedi==0.20.0
+executing==2.2.1
+asttokens==3.0.1
+stack-data==0.6.3
+pure-eval==0.2.3
+decorator==5.3.1
+nest-asyncio==1.6.0
+pexpect==4.9.0
+ptyprocess==0.7.0
+prompt-toolkit==3.0.52
+wcwidth==0.7.0
+debugpy==1.8.20
+
+# ── Local LLM (Ollama) ─────────────────────────────────────────────────────────
+langchain-ollama==1.1.0
+ollama==0.6.2
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+pywin32==312
+colorama==0.4.6
+
+# ── Build tools ───────────────────────────────────────────────────────────────
+build==1.5.0
+pyproject-hooks==1.2.0
