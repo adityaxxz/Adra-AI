@@ -89,6 +89,13 @@ elif LLM_PROVIDER == "gemini":
 else:
     raise ValueError(f"Unknown LLM provider: {LLM_PROVIDER}. Supported providers: gemini, groq, nvidia")
 
+# ChatNVIDIA.with_structured_output() unconditionally raises NotImplementedError
+# for include_raw=True (see langchain_nvidia_ai_endpoints/chat_models.py), so it
+# can't use the include_raw path structured_invoke() relies on to recover
+# usage_metadata. Structured output still works for it, just without token/cost
+# capture for that call.
+SUPPORTS_INCLUDE_RAW = LLM_PROVIDER != "nvidia"
+
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -219,7 +226,10 @@ def structured_invoke(
     metrics recorded for this call (see `agent.observability`).
     """
 
-    runnable = llm.with_structured_output(schema, method="json_schema", include_raw=True)
+    if SUPPORTS_INCLUDE_RAW:
+        runnable = llm.with_structured_output(schema, method="json_schema", include_raw=True)
+    else:
+        runnable = llm.with_structured_output(schema, method="json_schema")
     config = _trace_config(agent or schema.__name__, agent, session_id)
     last_error: BaseException | None = None
 
