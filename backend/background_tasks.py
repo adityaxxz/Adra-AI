@@ -274,15 +274,15 @@ class BackgroundTaskManager:
             # Step 1: Setup
             await reporter.step("setup", "...")
             from agent.tools import set_project_root
-            from pathlib import Path
-            
-            # Check if repo_path exists
-            if not Path(repo_path).exists():
-                error_msg = f"Repository path does not exist: {repo_path}"
-                logger.error(error_msg)
-                await reporter.error(error_msg)
-                return {"success": False, "error": error_msg, "task_id": task_id}
 
+            # Question answering only reads from the Qdrant collection
+            # (repository_agent -> explainer_agent never touch the filesystem),
+            # so it doesn't need repo_path to exist on disk. Local uploads live
+            # on the dyno's ephemeral filesystem and don't survive a
+            # restart/redeploy, but the indexed Qdrant data does - requiring
+            # repo_path here would break Q&A for previously-indexed repos for
+            # no reason. set_project_root is still called for consistency with
+            # the other modes, but nothing in this graph depends on it existing.
             set_project_root(repo_path)
             set_active_collection(collection_name)
             logger.info(f"Question answering setup complete for: {repo_path}")

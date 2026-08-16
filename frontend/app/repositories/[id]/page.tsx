@@ -488,7 +488,11 @@ function RepositoryPageInner() {
         )}
 
         {/* ---- File tree drawer (collapsible) ---- */}
-        {showDirectory && isReady && repository.files && Object.keys(repository.files).length > 0 && (
+        {/* Always render when toggled, even if `files` is empty - ProjectDirectoryViewer
+            has its own "No files in this project" empty state; silently omitting this
+            drawer for an empty/undefined files map is what made the Files button look
+            broken (it toggled state but nothing ever appeared). */}
+        {showDirectory && isReady && (
           <div
             className="shrink-0 border-b"
             style={{ borderColor: 'var(--border)', maxHeight: 240, overflowY: 'auto', background: 'var(--bg-surface)' }}
@@ -511,7 +515,7 @@ function RepositoryPageInner() {
             </div>
             <div className="px-4 py-3">
               <ProjectDirectoryViewer
-                files={repository.files}
+                files={repository.files || {}}
                 onFileClick={(filePath, content) => {
                   setSelectedFile(filePath);
                   setSelectedFileContent(content);
