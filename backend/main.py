@@ -73,6 +73,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         from sqlalchemy import text
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS projects_created_count INTEGER DEFAULT 0 NOT NULL;"))
+        await conn.execute(text("ALTER TABLE repositories ADD COLUMN IF NOT EXISTS files JSON;"))
     yield
     # Shutdown
     await engine.dispose()
@@ -655,6 +656,12 @@ async def get_repository(
         "lib",
     }
     
+    from agent.repository.service import ensure_repo_on_disk
+    rehydrated_path = ensure_repo_on_disk(repository.local_path, repository.files, repository.id)
+    if rehydrated_path != repository.local_path:
+        repository.local_path = rehydrated_path
+        await db.commit()
+
     files = {}
     if repository.local_path and os.path.exists(repository.local_path):
         try:
@@ -723,6 +730,12 @@ async def index_repository_endpoint(
             detail="Repository not found"
         )
     
+    from agent.repository.service import ensure_repo_on_disk, snapshot_repo_files
+    rehydrated_path = ensure_repo_on_disk(repository.local_path, repository.files, repository.id)
+    if rehydrated_path != repository.local_path:
+        repository.local_path = rehydrated_path
+        await db.commit()
+
     # Determine repo path - prioritize local path for local repos
     if repository.local_path:
         repo_path = repository.local_path
@@ -767,13 +780,14 @@ async def index_repository_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Indexing failed: {str(e)}"
         )
-    
+
     # Update repository status
     if task_result["success"]:
         repository.is_indexed = True
         repository.files_count = task_result["stats"].files_indexed
         repository.chunks_count = task_result["stats"].chunks_created
         repository.last_indexed_at = datetime.utcnow()
+        repository.files = snapshot_repo_files(repo_path)
         await db.commit()
     else:
         # Return the error from the background task
@@ -1037,6 +1051,12 @@ async def start_generation(
                 detail="Repository not found"
             )
         
+        from agent.repository.service import ensure_repo_on_disk
+        rehydrated_path = ensure_repo_on_disk(repository.local_path, repository.files, repository.id)
+        if rehydrated_path != repository.local_path:
+            repository.local_path = rehydrated_path
+            await db.commit()
+
         # Determine repo path - prioritize local path for local repos
         if repository.local_path:
             repo_path = repository.local_path
@@ -1072,7 +1092,13 @@ async def start_generation(
             collection_name=repository.collection_name,
             recursion_limit=request.recursion_limit
         )
-    
+
+        # Persist edited file contents so they survive a disk wipe even if a
+        # full re-index never runs again before the next restart.
+        if task_result.get("success") and task_result.get("edited_files"):
+            repository.files = {**(repository.files or {}), **task_result["edited_files"]}
+            await db.commit()
+
     elif request.mode == SessionMode.QUESTION_ANSWERING:
         if not request.repository_id:
             raise HTTPException(

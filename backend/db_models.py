@@ -85,7 +85,11 @@ class Repository(Base):
     
     # Qdrant collection name for this repository
     collection_name = Column(String, unique=True, nullable=False, index=True)
-    
+
+    # Persisted snapshot of indexed file contents, stored as JSON: {file_path: content}.
+    # Source of truth for rehydrating local_path after it's wiped (e.g. ephemeral dyno storage).
+    files = Column(JSON, nullable=True, default=dict)
+
     # Indexing status
     is_indexed = Column(Boolean, default=False)
     files_count = Column(Integer, default=0)

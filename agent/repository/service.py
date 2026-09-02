@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 import subprocess
 import re
@@ -106,6 +107,41 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
     )
     
     return stats
+
+
+def snapshot_repo_files(repo_path: str) -> dict:
+    """
+    Read all indexable files from disk into a {path: content} map, for
+    persisting into Repository.files so the repo can be rehydrated later.
+    """
+    files = scan_repository(repo_path)
+    return {file.path.replace("\\", "/"): file.content for file in files}
+
+
+def ensure_repo_on_disk(local_path: str, files: dict, repo_id: str) -> str:
+    """
+    Recreate the repo directory from a persisted files snapshot if the on-disk
+    copy is missing or empty (e.g. an ephemeral dyno filesystem got wiped).
+    Returns the path files now live at, or the original local_path unchanged
+    if rehydration wasn't needed or there was no snapshot to rehydrate from.
+    """
+    if not files:
+        return local_path
+
+    if local_path and os.path.isdir(local_path) and any(Path(local_path).rglob("*")):
+        return local_path
+
+    target = Path(local_path) if local_path else Path(f"./temp_repos/{repo_id}")
+
+    for rel_path, content in files.items():
+        if content is None or ".." in Path(rel_path).parts:
+            continue
+        full_path = target / rel_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+
+    logger.info(f"Rehydrated {len(files)} file(s) to {target}")
+    return str(target)
 
 
 def search_repository(query: str, k: int = 5, collection_name: str = None):
