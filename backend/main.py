@@ -987,8 +987,9 @@ async def start_generation(
             project = result.scalar_one_or_none()
             if project:
                 project.status = ProjectStatus.IN_PROGRESS
+                project.error_message = None
                 await db.commit()
-        
+
         task_result = await task_manager.execute_project_generation(
             session_id=session_id,
             user_prompt=request.prompt,

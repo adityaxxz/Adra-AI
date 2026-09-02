@@ -69,16 +69,17 @@ if LLM_PROVIDER == "nvidia":
     if not nvidia_api_key:
         raise ValueError("NVIDIA_API_KEY environment variable is required when LM_PROVIDER=nvidia")
 
-    MODEL_NAME = "mistralai/mixtral-8x22b-instruct-v0.1"
-    # Meta Llama models (3.1-8b, 3.3-70b) reached EOL on NVIDIA NIM on 2026-08-26.
-    # Using Mixtral-8x22B — fast MoE model, actively supported on NVIDIA NIM.
-    # Alternative: mistralai/mistral-large-2-instruct or google/gemma-2-27b-it
+    MODEL_NAME = "nvidia/nemotron-3.5-lightning-30b-a3b"
+    # Nemotron 3.5 Lightning 30B — NVIDIA's own model, active on NIM.
+    # thinking/reasoning is intentionally OFF: this app uses json_schema structured
+    # output (with_structured_output) which requires strict schema-compliant responses.
+    # Enabling thinking causes ForgivingPydanticOutputParser to loop endlessly.
     llm = ChatNVIDIA(
         model=MODEL_NAME,
         api_key=nvidia_api_key,
         temperature=0,
-        top_p=0.7,
-        max_tokens=1024,
+        top_p=0.95,
+        max_tokens=4096,
         timeout=120,
     )
 elif LLM_PROVIDER == "groq":

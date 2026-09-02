@@ -67,7 +67,7 @@ def langfuse_observe(name: str, as_type: str = "span"):
 PRICES: dict[str, dict[str, float]] = {
     "gemini-2.5-flash": {"in": 0.075, "out": 0.30},
     "openai/gpt-oss-120b": {"in": 0.15, "out": 0.60},
-    "mistralai/mixtral-8x22b-instruct-v0.1": {"in": 0.40, "out": 0.40},
+    "nvidia/nemotron-3.5-lightning-30b-a3b": {"in": 0.20, "out": 0.20},
 }
 
 current_run: "contextvars.ContextVar[Optional[RunMetrics]]" = contextvars.ContextVar(

@@ -107,6 +107,7 @@ export default function ProjectPage() {
 
     try {
       setIsGenerating(true);
+      setProject(prev => prev ? { ...prev, error_message: null } : prev);
 
       // Pre-generate session ID to allow WebSocket connection before generation begins
       const newSessionId = `generation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
