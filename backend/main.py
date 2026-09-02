@@ -3,7 +3,7 @@ load_dotenv()
 
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -960,18 +960,115 @@ async def upload_folder(
 # Generation Endpoints
 # =========================
 
+async def _run_generation_task(
+    mode: SessionMode,
+    session_id: str,
+    prompt: str,
+    project_root: str,
+    project_id: Optional[str],
+    repository_id: Optional[str],
+    repo_path: Optional[str],
+    collection_name: Optional[str],
+    recursion_limit: int
+):
+    """Run the agent pipeline and persist its result. Executed as a FastAPI
+    background task (after the /generate response is already sent) because
+    these pipelines regularly run past Heroku's 30s HTTP router timeout
+    (H12) - the caller must not await this inline. Uses its own DB session
+    since the request-scoped one is gone by the time this runs. The actual
+    answer/result reaches the frontend via the WebSocket `complete` event
+    (see websocket_manager.ProgressReporter), which isn't subject to the
+    HTTP router timeout."""
+    async with async_session() as db:
+        try:
+            if mode == SessionMode.GENERATION:
+                task_result = await task_manager.execute_project_generation(
+                    session_id=session_id,
+                    user_prompt=prompt,
+                    project_root=project_root,
+                    recursion_limit=recursion_limit
+                )
+
+                if project_id:
+                    result = await db.execute(
+                        select(Project).where(Project.id == project_id)
+                    )
+                    project = result.scalar_one_or_none()
+                    if project:
+                        if task_result["success"]:
+                            project.files = task_result["files"]
+                            project.status = ProjectStatus.COMPLETED
+                            project.integration_fixes = task_result.get("integration_fixes", 0)
+                            project.completed_at = datetime.utcnow()
+                        else:
+                            project.status = ProjectStatus.FAILED
+                            project.error_message = task_result.get("error", "Unknown error occurred during generation")
+                        await db.commit()
+
+            elif mode == SessionMode.EDITING:
+                task_result = await task_manager.execute_repository_editing(
+                    session_id=session_id,
+                    user_prompt=prompt,
+                    repo_path=repo_path,
+                    collection_name=collection_name,
+                    recursion_limit=recursion_limit
+                )
+
+                # Persist edited file contents so they survive a disk wipe even if a
+                # full re-index never runs again before the next restart.
+                if task_result.get("success") and task_result.get("edited_files") and repository_id:
+                    result = await db.execute(
+                        select(Repository).where(Repository.id == repository_id)
+                    )
+                    repository = result.scalar_one_or_none()
+                    if repository:
+                        repository.files = {**(repository.files or {}), **task_result["edited_files"]}
+                        await db.commit()
+
+            else:  # QUESTION_ANSWERING
+                task_result = await task_manager.execute_question_answering(
+                    session_id=session_id,
+                    user_prompt=prompt,
+                    repo_path=repo_path,
+                    collection_name=collection_name,
+                    recursion_limit=recursion_limit
+                )
+
+            result = await db.execute(select(Session).where(Session.id == session_id))
+            db_session = result.scalar_one_or_none()
+            if db_session:
+                db_session.result = task_result
+                db_session.is_active = False
+                db_session.completed_at = datetime.utcnow()
+                await db.commit()
+
+        except Exception as e:
+            logger.error(f"Background generation task failed: {e}", exc_info=True)
+            result = await db.execute(select(Session).where(Session.id == session_id))
+            db_session = result.scalar_one_or_none()
+            if db_session:
+                db_session.result = {"success": False, "error": str(e)}
+                db_session.is_active = False
+                db_session.completed_at = datetime.utcnow()
+                await db.commit()
+
+
 @app.post("/generate")
 # @limiter.limit(RATE_LIMITS["generation"])  # TEMPORARILY DISABLED FOR TESTING
 async def start_generation(
     http_request: Request,
     request: GenerationRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Start a generation task (project generation, repository editing, or question answering)."""
+    """Start a generation task (project generation, repository editing, or question answering).
+    Validates the request and resolves the repo/project path synchronously,
+    then schedules the actual agent run as a background task and returns
+    immediately - see `_run_generation_task` for why."""
     # Use provided session_id or generate a new one
     session_id = request.session_id if request.session_id else str(uuid.uuid4())
-    
+
     # Create session record
     db_session = Session(
         id=session_id,
@@ -982,16 +1079,19 @@ async def start_generation(
         messages=[],
         is_active=True
     )
-    
+
     db.add(db_session)
     await db.commit()
-    
+
     # Determine project root for generation
     project_root = f"./generated_projects/{session_id}"
     os.makedirs(project_root, exist_ok=True)
     set_project_root(project_root)
-    
-    # Start appropriate task based on mode
+
+    repo_path = None
+    collection_name = None
+
+    # Resolve inputs based on mode
     if request.mode == SessionMode.GENERATION:
         # Update project status
         if request.project_id:
@@ -1004,53 +1104,24 @@ async def start_generation(
                 project.error_message = None
                 await db.commit()
 
-        task_result = await task_manager.execute_project_generation(
-            session_id=session_id,
-            user_prompt=request.prompt,
-            project_root=project_root,
-            recursion_limit=request.recursion_limit
-        )
-        
-        # Update project with results
-        if task_result["success"] and request.project_id:
-            result = await db.execute(
-                select(Project).where(Project.id == request.project_id)
-            )
-            project = result.scalar_one_or_none()
-            if project:
-                project.files = task_result["files"]
-                project.status = ProjectStatus.COMPLETED
-                project.integration_fixes = task_result.get("integration_fixes", 0)
-                project.completed_at = datetime.utcnow()
-                await db.commit()
-        elif not task_result["success"] and request.project_id:
-            result = await db.execute(
-                select(Project).where(Project.id == request.project_id)
-            )
-            project = result.scalar_one_or_none()
-            if project:
-                project.status = ProjectStatus.FAILED
-                project.error_message = task_result.get("error", "Unknown error occurred during generation")
-                await db.commit()
-    
     elif request.mode == SessionMode.EDITING:
         if not request.repository_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository ID required for editing mode"
             )
-        
+
         result = await db.execute(
             select(Repository).where(Repository.id == request.repository_id)
         )
         repository = result.scalar_one_or_none()
-        
+
         if not repository:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Repository not found"
             )
-        
+
         from agent.repository.service import ensure_repo_on_disk
         rehydrated_path = ensure_repo_on_disk(repository.local_path, repository.files, repository.id)
         if rehydrated_path != repository.local_path:
@@ -1084,20 +1155,7 @@ async def start_generation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository URL or local path must be provided"
             )
-
-        task_result = await task_manager.execute_repository_editing(
-            session_id=session_id,
-            user_prompt=request.prompt,
-            repo_path=repo_path,
-            collection_name=repository.collection_name,
-            recursion_limit=request.recursion_limit
-        )
-
-        # Persist edited file contents so they survive a disk wipe even if a
-        # full re-index never runs again before the next restart.
-        if task_result.get("success") and task_result.get("edited_files"):
-            repository.files = {**(repository.files or {}), **task_result["edited_files"]}
-            await db.commit()
+        collection_name = repository.collection_name
 
     elif request.mode == SessionMode.QUESTION_ANSWERING:
         if not request.repository_id:
@@ -1105,18 +1163,18 @@ async def start_generation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository ID required for question answering mode"
             )
-        
+
         result = await db.execute(
             select(Repository).where(Repository.id == request.repository_id)
         )
         repository = result.scalar_one_or_none()
-        
+
         if not repository:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Repository not found"
             )
-        
+
         # Determine repo path - prioritize local path for local repos
         if repository.local_path:
             repo_path = repository.local_path
@@ -1141,25 +1199,25 @@ async def start_generation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository URL or local path must be provided"
             )
+        collection_name = repository.collection_name
 
-        task_result = await task_manager.execute_question_answering(
-            session_id=session_id,
-            user_prompt=request.prompt,
-            repo_path=repo_path,
-            collection_name=repository.collection_name,
-            recursion_limit=request.recursion_limit
-        )
-    
-    # Update session
-    db_session.result = task_result
-    db_session.is_active = False
-    db_session.completed_at = datetime.utcnow()
-    await db.commit()
-    
+    background_tasks.add_task(
+        _run_generation_task,
+        mode=request.mode,
+        session_id=session_id,
+        prompt=request.prompt,
+        project_root=project_root,
+        project_id=request.project_id,
+        repository_id=request.repository_id,
+        repo_path=repo_path,
+        collection_name=collection_name,
+        recursion_limit=request.recursion_limit
+    )
+
     return {
         "session_id": session_id,
         "mode": request.mode,
-        "result": task_result
+        "status": "processing"
     }
 
 
