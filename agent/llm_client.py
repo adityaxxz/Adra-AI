@@ -69,9 +69,10 @@ if LLM_PROVIDER == "nvidia":
     if not nvidia_api_key:
         raise ValueError("NVIDIA_API_KEY environment variable is required when LM_PROVIDER=nvidia")
 
-    MODEL_NAME = "meta/llama-3.1-8b-instruct"
-    # Using meta/llama-3.1-70b-instruct which supports structured output via LangChain
-    # Alternative: mistralai/mixtral-8x22b-instruct-v0.1 or meta/llama-3.1-405b-instruct
+    MODEL_NAME = "mistralai/mixtral-8x22b-instruct-v0.1"
+    # Meta Llama models (3.1-8b, 3.3-70b) reached EOL on NVIDIA NIM on 2026-08-26.
+    # Using Mixtral-8x22B — fast MoE model, actively supported on NVIDIA NIM.
+    # Alternative: mistralai/mistral-large-2-instruct or google/gemma-2-27b-it
     llm = ChatNVIDIA(
         model=MODEL_NAME,
         api_key=nvidia_api_key,

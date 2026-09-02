@@ -212,7 +212,7 @@ flowchart LR
 | Vector Store | Qdrant 1.12.0 (Cloud) |
 | Orchestration | LangGraph 1.2, LangChain |
 | LLM (default) | Google Gemini 2.5 Flash |
-| LLM (optional) | Groq (`openai/gpt-oss-120b`), NVIDIA NIM (`meta/llama-3.1-8b-instruct`) |
+| LLM (optional) | Groq (`openai/gpt-oss-120b`), NVIDIA NIM (`meta/llama-3.3-70b-instruct`) |
 | Embeddings | Google Gemini Embedding (`models/gemini-embedding-001`) |
 | Observability | LangSmith (tracing & debugging), OpenTelemetry (OTLP/gRPC) |
 | Authentication | OAuth 2.0 (Google, GitHub), JWT (HS256 via python-jose) |
