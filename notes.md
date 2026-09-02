@@ -40,3 +40,12 @@ if the user has loggedin in the current browser session, maintain it, and then c
 
 - show  the generated project, in a editor view can that users can edit the files as well
 
+---
+
+
+# TODO
+
+
+-  read the project files and check the editing repo feature, it just shows editing
+  complete. But when opening the actual file in the nav bar, didn't edited at that time, But when going back to dashboard and then opening the repo page and
+  then the clicking files, then I was able to see the edited part in the file. Fix this. I want to see the edited part when the edit is complete without going back.
