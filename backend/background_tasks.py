@@ -28,7 +28,6 @@ _INTERNAL_STATE_KEYS = {
     "plan",
     "task_plan",
     "coder_state",
-    "relevant_code_snippets",
     "retrieved_context",
 }
 

@@ -1,12 +1,12 @@
 import re
 import logging
 from langsmith import traceable
-from agent.prompts import planner_prompt, architect_prompt, coder_prompt, integrator_prompt, explainer_prompt
+from agent.prompts import planner_prompt, edit_planner_prompt, architect_prompt, coder_prompt, integrator_prompt, explainer_prompt
 from agent.repository.service import search_repository
-from agent.state import Plan, TaskPlan, CoderState, CoderOutput, IntegrationResult
+from agent.state import Plan, TaskPlan, Architect, EditPlan, CoderState, CoderOutput, IntegrationResult
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_selected_project_files
+from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_selected_project_files, list_project_paths
 from agent.llm_client import structured_invoke, simple_invoke, truncate_for_context, get_stats
 from agent.observability import langfuse_observe
 
@@ -33,6 +33,10 @@ def _carry(state: dict, **updates) -> dict:
 
 
 def _plan_summary(task_plan: TaskPlan) -> str:
+    # Editing plans carry a plain summary; generation plans carry a full Plan.
+    edit_summary = getattr(task_plan, "edit_summary", None)
+    if edit_summary:
+        return edit_summary
     plan = getattr(task_plan, "plan", None)
     if plan is None:
         return "Unknown project"
@@ -42,41 +46,19 @@ def _plan_summary(task_plan: TaskPlan) -> str:
 @traceable(name="planner_agent", run_type="chain")
 @langfuse_observe("planner_agent", as_type="agent")
 def planner_agent(state: dict) -> dict:
+    """Plan a project generated from scratch. Repository editing uses
+    `edit_planner_agent` instead."""
     user_prompt = state["user_prompt"]
     session_id = state.get("session_id")
 
-    retrieved_context = state.get("retrieved_context", "")
-    collection_name = state.get("collection_name", None)
-
     res = structured_invoke(
         Plan,
-        planner_prompt(
-            user_prompt=user_prompt,
-            retrieved_context=retrieved_context,
-        ),
+        planner_prompt(user_prompt=user_prompt),
         agent="planner",
         session_id=session_id,
     )
 
-    # If repository context exists, search for relevant snippets for each file
-    relevant_snippets = {}
-    if retrieved_context and hasattr(res, 'files'):
-        from agent.repository.service import search_repository
-        for file in res.files:
-            # Search for code relevant to this file's purpose
-            query = f"{file.purpose} {file.path}"
-            try:
-                results = search_repository(query, k=3, collection_name=collection_name)
-                if results:
-                    snippets = "\n\n".join(
-                        f"FILE: {r.file_path}\n{r.content}"
-                        for r in results
-                    )
-                    relevant_snippets[file.path] = snippets
-            except Exception as e:
-                logger.warning(f"planner_agent: relevant-snippet search failed for {file.path!r}: {e}")
-
-    return _carry(state, plan=res, relevant_code_snippets=relevant_snippets)
+    return _carry(state, plan=res)
 
 
 @traceable(name="architect_agent", run_type="chain")
@@ -85,8 +67,50 @@ def architect_agent(state: dict) -> dict:
     plan: Plan = state["plan"]
     res = structured_invoke(TaskPlan, architect_prompt(plan), agent="architect", session_id=state.get("session_id"))
     res.plan = plan
-    relevant_snippets = state.get("relevant_code_snippets", {})
-    return _carry(state, task_plan=res, relevant_code_snippets=relevant_snippets)
+    return _carry(state, task_plan=res)
+
+
+@traceable(name="edit_planner_agent", run_type="chain")
+@langfuse_observe("edit_planner_agent", as_type="agent")
+def edit_planner_agent(state: dict) -> dict:
+    """Plan file-level edits to an existing repository in one call.
+
+    Replaces planner+architect for editing. Those two were built for greenfield
+    generation: the Plan schema's name/description/techstack/features fields are
+    meaningful when creating a project but are pure invention for "add a dark
+    mode toggle", and the architect pass largely restated the planner's file
+    list. Grounding the model in the real file listing is what keeps it from
+    planning edits to paths that don't exist.
+    """
+    repo_files = "\n".join(list_project_paths()) or "(no files found)"
+
+    res = structured_invoke(
+        EditPlan,
+        edit_planner_prompt(
+            user_prompt=state["user_prompt"],
+            retrieved_context=truncate_for_context(state.get("retrieved_context", ""), max_chars=6000),
+            repo_files=truncate_for_context(repo_files, max_chars=4000),
+        ),
+        agent="edit_planner",
+        session_id=state.get("session_id"),
+    )
+
+    # The coder loop consumes a TaskPlan, so adapt rather than teaching it a
+    # second shape. `edit_summary` is what `_plan_summary` reports downstream.
+    task_plan = TaskPlan(
+        steps=[
+            Architect(filepath=edit.filepath, task_description=edit.change_description)
+            for edit in res.edits
+        ]
+    )
+    task_plan.edit_summary = res.summary
+
+    logger.info(
+        f"edit_planner_agent: planned {len(res.edits)} file edit(s): "
+        f"{[e.filepath for e in res.edits]}"
+    )
+
+    return _carry(state, task_plan=task_plan)
 
 
 @traceable(name="coder_agent", run_type="chain")
@@ -97,8 +121,6 @@ def coder_agent(state: dict) -> dict:
 
     if coder_state is None:
         coder_state = CoderState(task_plan=state["task_plan"], current_step_idx=0)
-        relevant_snippets = state.get("relevant_code_snippets", {})
-        coder_state.relevant_code_snippets = relevant_snippets
 
     steps = coder_state.task_plan.steps
 
@@ -112,14 +134,9 @@ def coder_agent(state: dict) -> dict:
     project_context = read_sibling_files_context(curr_task.filepath)
     project_context = truncate_for_context(project_context, max_chars=8000)
 
-    # Use file-specific relevant snippets if available, otherwise use general repository context
-    repository_context = ""
-    if coder_state.relevant_code_snippets and curr_task.filepath in coder_state.relevant_code_snippets:
-        repository_context = coder_state.relevant_code_snippets[curr_task.filepath]
-    else:
-        repository_context = state.get("retrieved_context", "")
-    
-    repository_context = truncate_for_context(repository_context, max_chars=4000)
+    # Repo-wide related code from retrieval (empty in generation mode). The
+    # file being edited is read from disk above, so it needs no RAG excerpt.
+    repository_context = truncate_for_context(state.get("retrieved_context", ""), max_chars=4000)
 
     prompt = coder_prompt(
         filepath=curr_task.filepath,
@@ -229,17 +246,17 @@ project_generation_graph.add_edge("integrator", END)
 project_generation_agent = project_generation_graph.compile()
 
 # Repository Editing Graph (with repository context)
+# Uses edit_planner instead of planner+architect: one grounded planning call
+# scoped to changing files that already exist. See `edit_planner_agent`.
 repository_editing_graph = StateGraph(dict)
 repository_editing_graph.add_node("repository", repository_agent)
-repository_editing_graph.add_node("planner", planner_agent)
-repository_editing_graph.add_node("architect", architect_agent)
+repository_editing_graph.add_node("edit_planner", edit_planner_agent)
 repository_editing_graph.add_node("coder", coder_agent)
 repository_editing_graph.add_node("integrator", integrator_agent)
 
 repository_editing_graph.add_edge(START, "repository")
-repository_editing_graph.add_edge("repository", "planner")
-repository_editing_graph.add_edge("planner", "architect")
-repository_editing_graph.add_edge("architect", "coder")
+repository_editing_graph.add_edge("repository", "edit_planner")
+repository_editing_graph.add_edge("edit_planner", "coder")
 
 repository_editing_graph.add_conditional_edges(
     "coder",

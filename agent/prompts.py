@@ -1,16 +1,45 @@
 
-def planner_prompt(user_prompt: str, retrieved_context: str) -> str:
+def planner_prompt(user_prompt: str) -> str:
+    """Plan a project built from scratch. Editing an existing repository goes
+    through `edit_planner_prompt` instead."""
     PLANNER_PROMPT = f"""
         You are PLANNER agent, convert the USER prompt into a complete engineering project plan.
 
         user request : {user_prompt}
-        
-        Use the repository context when planning.
-        Prefer modifying existing files over creating duplicate functionality.
-        
-        RELEVANT CODEBASE CONTEXT: {retrieved_context}
         """
     return PLANNER_PROMPT
+
+
+def edit_planner_prompt(user_prompt: str, retrieved_context: str, repo_files: str) -> str:
+    return f"""
+        You are the EDIT PLANNER. Plan the smallest set of file changes that satisfies
+        the user's request in an EXISTING repository.
+
+        USER REQUEST: {user_prompt}
+
+        FILES THAT CURRENTLY EXIST IN THIS REPOSITORY:
+        {repo_files}
+
+        RELEVANT CODE RETRIEVED FROM THIS REPOSITORY:
+        {retrieved_context}
+
+        RULES:
+        - Prefer modifying existing files over creating new ones. Add a file only when
+          the request genuinely cannot be satisfied by editing what is already there.
+        - Every filepath must either appear in the file list above, or be a new file you
+          are deliberately choosing to create. Never guess at a path that isn't listed.
+        - Exactly one entry per file — never split one file across multiple entries.
+        - Order entries by dependency: shared/foundational files before their consumers.
+        - In each change_description, state precisely what to add, modify or remove and
+          name the concrete symbols involved (functions, classes, routes, config keys).
+        - Do NOT restructure the project, rename existing modules, reformat code, or
+          touch anything unrelated to the request.
+        - Keep the plan minimal. Do not invent features the user did not ask for.
+        - The retrieved code above is a partial excerpt, not the whole repository. Do not
+          assume something is missing just because it isn't shown.
+
+        Return a one-line summary of the overall change plus the ordered list of file edits.
+    """
 
 
 def architect_prompt(plan: str) -> str:

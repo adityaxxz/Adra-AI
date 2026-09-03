@@ -24,6 +24,21 @@ class TaskPlan(BaseModel):
     model_config = ConfigDict(extra="allow")   #allows extra additional fields passed during model instantiation, store within the model instance 
 
 
+class FileEdit(BaseModel):
+    filepath: str = Field(description="Path of the file to modify or create, relative to the repository root")
+    change_description: str = Field(description="Precisely what to add, modify or remove in this file, naming the concrete symbols involved")
+
+
+class EditPlan(BaseModel):
+    """Plan for changing an existing repository.
+
+    Deliberately has no name/techstack/features: those describe a project being
+    created from scratch, and forcing them for an edit only invites invention.
+    """
+    summary: str = Field(description="One-line summary of the overall change being made")
+    edits: list[FileEdit] = Field(description="Files to change, ordered so shared/foundational files come before the files that consume them")
+
+
 class CoderOutput(BaseModel):
     content: str = Field(description="The complete file content to write (full file, not a diff or snippet)")
 
@@ -43,7 +58,6 @@ class CoderState(BaseModel):
     task_plan: TaskPlan = Field(description="The plan for the task to be implemented")
     current_step_idx: int = Field(0, description="The index of the current step in the implementation steps")
     current_file_content: Optional[str] = Field(None, description="The content of the file currently being edited or created")
-    relevant_code_snippets: Optional[dict[str, str]] = Field(None, description="Relevant code snippets from repository for each file being edited")
 
 
 class RetrievedContext(BaseModel):

@@ -93,6 +93,9 @@ function RepositoryPageInner() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastProcessedMsgRef = useRef<any>(null);
+  // Whether the current run ever established a WebSocket connection. Without
+  // this, the brief pre-connect window would look like a dropped connection.
+  const wasConnectedRef = useRef(false);
 
   // WebSocket
   const { isConnected, messages, latestMessage, error: wsError, clearError } = useWebSocket(
@@ -195,6 +198,124 @@ function RepositoryPageInner() {
     }
   }, [latestMessage, mode, isIndexing]);
 
+  // Render a finished run that we learned about from the REST API rather than
+  // the WebSocket. Payload here is the stored task result, which has a
+  // different shape from the WS `complete` frame.
+  const applySessionOutcome = (result: any) => {
+    if (!result || result.success === false) {
+      addAssistantMessage(
+        `Error: ${result?.error || 'The run did not complete. Please try again.'}`
+      );
+      return;
+    }
+    if (mode === 'ask') {
+      const answer = result.answer ?? result.result?.answer;
+      addAssistantMessage(
+        answer ? String(answer) : 'The run finished but no answer was returned. Please try again.'
+      );
+    } else {
+      const editedFiles: Record<string, string> = result.edited_files || {};
+      addAssistantMessage(result.message || 'Editing complete.', editedFiles);
+      if (Object.keys(editedFiles).length > 0) {
+        setRepository(prev =>
+          prev ? { ...prev, files: { ...(prev.files || {}), ...editedFiles } } : prev
+        );
+        loadRepository();
+      }
+    }
+  };
+
+  // The agent runs server-side as a background task, and progress messages are
+  // dropped (not queued) whenever no socket is attached — so a dropped
+  // connection means the outcome may already be lost from the stream while the
+  // run itself is fine. Treating a disconnect as a failure would be wrong, and
+  // doing nothing leaves the composer disabled forever. Instead ask the API
+  // what actually happened, which also recovers results the socket missed.
+  useEffect(() => {
+    if (!isProcessing || !sessionId) return;
+    if (isConnected) {
+      wasConnectedRef.current = true;
+      return;
+    }
+    if (!wasConnectedRef.current) return; // never connected yet; still starting up
+
+    let attempts = 0;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const MAX_ATTEMPTS = 100; // ~5 minutes at 3s
+    const stop = () => {
+      if (timer) { clearInterval(timer); timer = null; }
+    };
+
+    const check = async () => {
+      attempts += 1;
+      try {
+        const session = await generationAPI.getSession(sessionId);
+        if (session && session.is_active === false) {
+          stop();
+          applySessionOutcome(session.result);
+          return;
+        }
+      } catch {
+        // Server may be mid-restart; keep trying until the attempt cap.
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        stop();
+        addAssistantMessage(
+          'Lost connection to the server and the run is still not finished. It may still be processing — reload the page to check.'
+        );
+      }
+    };
+
+    timer = setInterval(check, 3000);
+    check();
+    return stop;
+  }, [isConnected, isProcessing, sessionId, mode]);
+
+  // Same reasoning as the chat recovery above, for indexing. Indexing has no
+  // Session row to consult, so the repository's own is_indexed flag is the
+  // authority on whether the run actually finished.
+  useEffect(() => {
+    if (!isIndexing || !sessionId) return;
+    if (isConnected) {
+      wasConnectedRef.current = true;
+      return;
+    }
+    if (!wasConnectedRef.current) return;
+
+    let attempts = 0;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const MAX_ATTEMPTS = 100; // ~5 minutes at 3s
+    const stop = () => {
+      if (timer) { clearInterval(timer); timer = null; }
+    };
+
+    const check = async () => {
+      attempts += 1;
+      try {
+        const data = await repositoriesAPI.getRepository(repositoryId);
+        if (data?.is_indexed) {
+          stop();
+          setRepository(data);
+          setIsIndexing(false);
+          return;
+        }
+      } catch {
+        // Server may be mid-restart; keep trying until the attempt cap.
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        // Can't tell "still running" from "died" without a session row, so
+        // release the UI and let the user retry rather than spin forever.
+        stop();
+        setIsIndexing(false);
+        loadRepository();
+      }
+    };
+
+    timer = setInterval(check, 3000);
+    check();
+    return stop;
+  }, [isConnected, isIndexing, sessionId, repositoryId]);
+
   // Scroll to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -276,6 +397,7 @@ function RepositoryPageInner() {
     if (!repository) return;
     setIsIndexing(true);
     const newSessionId = `indexing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    wasConnectedRef.current = false; // new run: don't inherit the last run's connection
     setSessionId(newSessionId);
     clearError();
     await new Promise(r => setTimeout(r, 500));
@@ -314,6 +436,7 @@ function RepositoryPageInner() {
     setIsProcessing(true);
 
     const newSessionId = `${mode === 'ask' ? 'qa' : 'edit'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    wasConnectedRef.current = false; // new run: don't inherit the last run's connection
     setSessionId(newSessionId);
     await new Promise(r => setTimeout(r, 500));
 

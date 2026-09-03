@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_fastapi_instrumentator import Instrumentator
 from typing import Optional, List
@@ -64,6 +64,52 @@ engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+ORPHANED_RUN_ERROR = "Run was interrupted by a server restart. Please try again."
+
+
+async def fail_orphaned_runs() -> None:
+    """Mark runs that were killed mid-flight as failed.
+
+    Agent runs execute as in-process background tasks (see
+    `_run_generation_task`), so a dyno restart or deploy kills them with no
+    chance to record a result: the session stays `is_active` and the project
+    stays IN_PROGRESS, leaving the UI spinning forever with no error. Nothing
+    can legitimately be running during startup, so anything still marked active
+    here was orphaned by the previous process.
+
+    Assumes a single web process (see the Dockerfile's `--workers 1`); with
+    multiple dynos/workers this would also cancel runs live on another process.
+    """
+    async with async_session() as db:
+        try:
+            sessions = await db.execute(
+                update(Session)
+                .where(Session.is_active.is_(True))
+                .values(
+                    is_active=False,
+                    completed_at=datetime.utcnow(),
+                    result={"success": False, "error": ORPHANED_RUN_ERROR},
+                )
+            )
+            # Leaves status FAILED, which is what the UI offers "Regenerate" on.
+            projects = await db.execute(
+                update(Project)
+                .where(Project.status == ProjectStatus.IN_PROGRESS)
+                .values(status=ProjectStatus.FAILED, error_message=ORPHANED_RUN_ERROR)
+            )
+            await db.commit()
+
+            if sessions.rowcount or projects.rowcount:
+                logger.warning(
+                    f"Marked orphaned runs as failed after restart: "
+                    f"{sessions.rowcount} session(s), {projects.rowcount} project(s)"
+                )
+        except Exception as e:
+            # Never block startup on this - a failed sweep only means stale rows.
+            await db.rollback()
+            logger.error(f"Failed to sweep orphaned runs: {e}", exc_info=True)
+
+
 # Lifespan event handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,6 +120,7 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS projects_created_count INTEGER DEFAULT 0 NOT NULL;"))
         await conn.execute(text("ALTER TABLE repositories ADD COLUMN IF NOT EXISTS files JSON;"))
+    await fail_orphaned_runs()
     yield
     # Shutdown
     await engine.dispose()
@@ -708,14 +755,102 @@ async def get_repository(
     }
 
 
+async def _run_indexing_task(repository_id: str, session_id: str):
+    """Resolve the repo on disk (rehydrate or clone) and index it into Qdrant.
+
+    Runs as a background task for the same reason as `_run_generation_task`:
+    cloning a repo and embedding every chunk routinely runs past Heroku's 30s
+    HTTP router timeout (H12). Progress, completion and errors all reach the
+    frontend over the WebSocket, which isn't subject to that timeout.
+
+    The blocking git clone and whole-repo file reads are pushed onto threads -
+    this coroutine shares the event loop with every other request (and with
+    the WebSocket that reports its own progress), so it must not block it.
+    """
+    from agent.repository.service import (
+        ensure_repo_on_disk,
+        snapshot_repo_files,
+        clone_github_repo,
+    )
+
+    reporter = ProgressReporter(session_id)
+
+    async with async_session() as db:
+        try:
+            result = await db.execute(
+                select(Repository).where(Repository.id == repository_id)
+            )
+            repository = result.scalar_one_or_none()
+            if not repository:
+                await reporter.error("Repository not found")
+                return
+
+            rehydrated_path = await asyncio.to_thread(
+                ensure_repo_on_disk, repository.local_path, repository.files, repository.id
+            )
+            if rehydrated_path != repository.local_path:
+                repository.local_path = rehydrated_path
+                await db.commit()
+
+            # Determine repo path - prioritize local path for local repos
+            if repository.local_path:
+                repo_path = repository.local_path
+            elif repository.url:
+                # Clone GitHub repositories to local path if needed
+                if repository.url.startswith('http'):
+                    repo_name = repository.url.split('/')[-1].replace('.git', '')
+                    local_repo_path = f"./temp_repos/{repo_name}"
+                    # Ensure temp_repos directory exists
+                    os.makedirs("./temp_repos", exist_ok=True)
+                    repo_path = await asyncio.to_thread(
+                        clone_github_repo, repository.url, local_repo_path
+                    )
+                    logger.info(f"Cloned repository to: {repo_path}")
+                    # Update the repository's local_path in the database
+                    repository.local_path = repo_path
+                    await db.commit()
+                else:
+                    repo_path = repository.url
+            else:
+                await reporter.error("Repository URL or local path must be provided")
+                return
+
+            task_result = await task_manager.index_repository_task(
+                session_id=session_id,
+                repo_path=repo_path,
+                collection_name=repository.collection_name
+            )
+
+            if not task_result["success"]:
+                # index_repository_task already reported the error over the socket.
+                return
+
+            repository.is_indexed = True
+            repository.files_count = task_result["stats"].files_indexed
+            repository.chunks_count = task_result["stats"].chunks_created
+            repository.last_indexed_at = datetime.utcnow()
+            repository.files = await asyncio.to_thread(snapshot_repo_files, repo_path)
+            await db.commit()
+
+        except Exception as e:
+            logger.error(f"Background indexing task failed: {e}", exc_info=True)
+            await db.rollback()
+            await reporter.error(f"Indexing failed: {str(e)}")
+
+
 @app.post("/repositories/{repository_id}/index")
 async def index_repository_endpoint(
     repository_id: str,
     session_id: str,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Index a repository in the background."""
+    """Schedule repository indexing and return immediately.
+
+    Ownership is verified synchronously; the clone + embed itself runs in the
+    background (see `_run_indexing_task`) and reports over the WebSocket.
+    """
     result = await db.execute(
         select(Repository).where(
             Repository.id == repository_id,
@@ -723,80 +858,24 @@ async def index_repository_endpoint(
         )
     )
     repository = result.scalar_one_or_none()
-    
+
     if not repository:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repository not found"
         )
-    
-    from agent.repository.service import ensure_repo_on_disk, snapshot_repo_files
-    rehydrated_path = ensure_repo_on_disk(repository.local_path, repository.files, repository.id)
-    if rehydrated_path != repository.local_path:
-        repository.local_path = rehydrated_path
-        await db.commit()
 
-    # Determine repo path - prioritize local path for local repos
-    if repository.local_path:
-        repo_path = repository.local_path
-    elif repository.url:
-        # Clone GitHub repositories to local path if needed
-        if repository.url.startswith('http'):
-            from agent.repository.service import clone_github_repo
-            repo_name = repository.url.split('/')[-1].replace('.git', '')
-            local_repo_path = f"./temp_repos/{repo_name}"
-            # Ensure temp_repos directory exists
-            os.makedirs("./temp_repos", exist_ok=True)
-            try:
-                repo_path = clone_github_repo(repository.url, local_repo_path)
-                logger.info(f"Cloned repository to: {repo_path}")
-                # Update the repository's local_path in the database
-                repository.local_path = repo_path
-                await db.commit()
-            except Exception as e:
-                logger.error(f"Failed to clone repository: {e}", exc_info=True)
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to clone repository: {str(e)}"
-                )
-        else:
-            repo_path = repository.url
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repository URL or local path must be provided"
-        )
+    background_tasks.add_task(
+        _run_indexing_task,
+        repository_id=repository_id,
+        session_id=session_id
+    )
 
-    # Start background indexing task
-    try:
-        task_result = await task_manager.index_repository_task(
-            session_id=session_id,
-            repo_path=repo_path,
-            collection_name=repository.collection_name
-        )
-    except Exception as e:
-        logger.error(f"Error during indexing task: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Indexing failed: {str(e)}"
-        )
-
-    # Update repository status
-    if task_result["success"]:
-        repository.is_indexed = True
-        repository.files_count = task_result["stats"].files_indexed
-        repository.chunks_count = task_result["stats"].chunks_created
-        repository.last_indexed_at = datetime.utcnow()
-        repository.files = snapshot_repo_files(repo_path)
-        await db.commit()
-    else:
-        # Return the error from the background task
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=task_result.get("error", "Indexing failed")
-        )
-    
-    return task_result
+    return {
+        "session_id": session_id,
+        "repository_id": repository_id,
+        "status": "processing"
+    }
 
 
 @app.delete("/repositories/{repository_id}")
