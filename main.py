@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--github", type=str, default=None,
                         help="GitHub repository URL for repository-aware editing mode")
     parser.add_argument("--collection", type=str, default=None,
-                        help="ChromaDB collection name for repository (default: auto-generated from repo name)")
+                        help="Qdrant collection name for repository (default: auto-generated from repo name)")
     parser.add_argument("--ask", action="store_true",
                         help="Ask question mode: answer questions about the codebase without making changes")
 

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset: bool = False) -> IndexingStats:
     """
-    Scan a repository, chunk files, generate embeddings and store them in ChromaDB.
+    Scan a repository, chunk files, generate embeddings and store them in Qdrant.
     Implements incremental indexing with file hashing.
     Force full re-indexing if `reset` is True. (default: False)
     """

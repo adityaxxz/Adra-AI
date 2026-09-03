@@ -52,8 +52,8 @@ def _ensure_collection(collection_name: str, vector_size: int) -> None:
 def get_collection(collection_name: str = None) -> str:
     """Get or create a collection by name. Uses active collection if not specified.
 
-    Returns the collection name; callers that used to receive a Chroma collection
-    object should call `search()` instead of querying the return value directly.
+    Returns the collection name, not a client object; query it via `search()`
+    rather than using the return value directly.
     """
     name = collection_name or _active_collection_name
     try:
