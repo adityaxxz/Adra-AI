@@ -5,6 +5,8 @@ from typing import Tuple, Optional
 
 from langchain_core.tools import tool
 
+from agent.repository.scanner import IGNORE_DIRS
+
 logger = logging.getLogger(__name__)
 
 # Default project root for project generation mode
@@ -94,12 +96,21 @@ def init_project_root():
 
 
 def list_project_paths() -> list[str]:
+    """List project files the agents are allowed to see.
+
+    Skips IGNORE_DIRS (`.git`, `node_modules`, `.venv`, ...) — in repository
+    editing mode PROJECT_ROOT is a real checkout, and `.git/**` sorts ahead of
+    source alphabetically, so without this filter git internals and vendored
+    deps consume the whole context budget before any real code is reached.
+    Extension is deliberately NOT filtered: generated projects legitimately
+    contain requirements.txt / Dockerfile / *.yml that the agents must see.
+    """
     if not PROJECT_ROOT.exists():
         return []
     return sorted(
         str(f.relative_to(PROJECT_ROOT)).replace("\\", "/")
         for f in PROJECT_ROOT.glob("**/*")
-        if f.is_file()
+        if f.is_file() and not any(part in IGNORE_DIRS for part in f.relative_to(PROJECT_ROOT).parts)
     )
 
 
@@ -120,10 +131,15 @@ def read_sibling_files_context(exclude_path: str) -> str:
     return "\n\n".join(parts) if parts else "(no other project files yet)"
 
 
-def read_all_project_files() -> str:
+def read_selected_project_files(paths: list[str]) -> str:
+    """Return contents of only the given project files, in the order given."""
     parts: list[str] = []
-    for rel_path in list_project_paths():
-        content = read_file.invoke({"path": rel_path})
-        if content.strip():
+    for rel_path in paths:
+        try:
+            content = read_file.invoke({"path": rel_path})
+        except Exception as e:
+            logger.warning(f"read_selected_project_files: skipping unreadable file {rel_path!r}: {e}")
+            continue
+        if content.strip() and not content.startswith("[Binary file skipped"):
             parts.append(f"=== {rel_path} ===\n{content}")
-    return "\n\n".join(parts) if parts else "(empty project)"
+    return "\n\n".join(parts) if parts else "(no files to review)"

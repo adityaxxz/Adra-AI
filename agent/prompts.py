@@ -71,14 +71,21 @@ def coder_prompt( filepath: str, task_description: str, existing_content: str, p
     """
 
 
-def integrator_prompt(project_files: str, plan_summary: str) -> str:
+def integrator_prompt(project_files: str, plan_summary: str, reference_context: str = "") -> str:
+    reference_section = f"""
+
+        REFERENCE CONTEXT (pre-existing code, read-only — you may NOT return updates for these):
+        {reference_context}
+        """ if reference_context.strip() else ""
+
     return f"""
-        You are the INTEGRATOR agent. Review this generated project and fix cross-file bugs.
+        You are the INTEGRATOR agent. Review the files changed by this task and fix cross-file bugs.
 
         Project: {plan_summary}
 
-        ALL PROJECT FILES:
+        FILES TO REVIEW (these are the only files you may correct):
         {project_files}
+        {reference_section}
 
         Check for:
         - References to symbols, modules, or APIs that do not exist in any other file
@@ -87,7 +94,14 @@ def integrator_prompt(project_files: str, plan_summary: str) -> str:
         - Wrong file paths, module paths, or resource references
         - Logic bugs that prevent core features from working end-to-end
 
-        Return updates ONLY for files that need fixes. Each update must be the FULL corrected file.
+        SCOPE RULES (critical):
+        - Return updates ONLY for files listed under FILES TO REVIEW. Updates for any other
+          path will be discarded.
+        - Files not shown above are outside the scope of this change. Do NOT assume a
+          referenced symbol, module, or import is missing just because its definition is
+          not included here — only flag a reference you can positively confirm is broken.
+
+        Each update must be the FULL corrected file.
         If everything integrates correctly, return an empty updates list.
     """
 

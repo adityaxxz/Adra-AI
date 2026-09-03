@@ -20,6 +20,26 @@ from agent.logging_config import bind_run_context, clear_run_context
 logger = logging.getLogger(__name__)
 
 
+# Graph nodes forward the whole state (see agent.graph._carry), so the final
+# state carries Pydantic models (plan/task_plan/coder_state) and bulky
+# retrieval text. Session.result is a JSON column, so strip that internal
+# scaffolding before returning - the useful outputs are extracted beforehand.
+_INTERNAL_STATE_KEYS = {
+    "plan",
+    "task_plan",
+    "coder_state",
+    "relevant_code_snippets",
+    "retrieved_context",
+}
+
+
+def _serializable_result(state: Dict) -> Dict:
+    """JSON-safe view of a graph's final state, for persisting to the DB."""
+    if not isinstance(state, dict):
+        return {}
+    return {k: v for k, v in state.items() if k not in _INTERNAL_STATE_KEYS}
+
+
 class BackgroundTaskManager:
     """Manage background task execution for agents."""
     
@@ -93,7 +113,7 @@ class BackgroundTaskManager:
             record_agent_run("generation", "success")
             return {
                 "success": True,
-                "result": result,
+                "result": _serializable_result(result),
                 "files": files,
                 "integration_fixes": fixes,
                 "metrics": metrics,
@@ -203,7 +223,7 @@ class BackgroundTaskManager:
             record_agent_run("editing", "success")
             return {
                 "success": True,
-                "result": result,
+                "result": _serializable_result(result),
                 "edited_files": edited_files,
                 "files_changed": edited_file_names,
                 "metrics": metrics,
@@ -326,7 +346,7 @@ class BackgroundTaskManager:
             record_agent_run("qa", "success")
             return {
                 "success": True,
-                "result": result,
+                "result": _serializable_result(result),
                 "answer": answer,
                 "metrics": metrics,
                 "task_id": task_id

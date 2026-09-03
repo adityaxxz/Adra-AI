@@ -6,7 +6,7 @@ from agent.repository.service import search_repository
 from agent.state import Plan, TaskPlan, CoderState, CoderOutput, IntegrationResult
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_all_project_files
+from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_selected_project_files
 from agent.llm_client import structured_invoke, simple_invoke, truncate_for_context, get_stats
 from agent.observability import langfuse_observe
 
@@ -19,6 +19,17 @@ def _strip_markdown_fences(content: str) -> str:
     if match:
         return match.group(1)
     return content
+
+
+def _carry(state: dict, **updates) -> dict:
+    """Forward the incoming state, overlaid with this node's updates.
+
+    `StateGraph(dict)` REPLACES the state with whatever a node returns instead
+    of merging into it, so a node returning only its own keys silently drops
+    everything upstream set (session_id, retrieved_context, coder_state, ...).
+    Every node must route its return through here.
+    """
+    return {**state, **updates}
 
 
 def _plan_summary(task_plan: TaskPlan) -> str:
@@ -65,7 +76,7 @@ def planner_agent(state: dict) -> dict:
             except Exception as e:
                 logger.warning(f"planner_agent: relevant-snippet search failed for {file.path!r}: {e}")
 
-    return {"plan": res, "relevant_code_snippets": relevant_snippets}
+    return _carry(state, plan=res, relevant_code_snippets=relevant_snippets)
 
 
 @traceable(name="architect_agent", run_type="chain")
@@ -75,7 +86,7 @@ def architect_agent(state: dict) -> dict:
     res = structured_invoke(TaskPlan, architect_prompt(plan), agent="architect", session_id=state.get("session_id"))
     res.plan = plan
     relevant_snippets = state.get("relevant_code_snippets", {})
-    return {"task_plan": res, "relevant_code_snippets": relevant_snippets}
+    return _carry(state, task_plan=res, relevant_code_snippets=relevant_snippets)
 
 
 @traceable(name="coder_agent", run_type="chain")
@@ -92,7 +103,7 @@ def coder_agent(state: dict) -> dict:
     steps = coder_state.task_plan.steps
 
     if coder_state.current_step_idx >= len(steps):
-        return {"coder_state": coder_state, "status": "DONE"}
+        return _carry(state, coder_state=coder_state, status="DONE")
 
     curr_task = steps[coder_state.current_step_idx]
     existing_content = read_file.invoke({"path": curr_task.filepath})
@@ -124,24 +135,43 @@ def coder_agent(state: dict) -> dict:
     write_file.invoke({"path": curr_task.filepath, "content": content})
 
     coder_state.current_step_idx += 1
-    return {"coder_state": coder_state}
+    return _carry(state, coder_state=coder_state)
 
 
 @traceable(name="integrator_agent", run_type="chain")
 @langfuse_observe("integrator_agent", as_type="agent")
 def integrator_agent(state: dict) -> dict:
     task_plan: TaskPlan = state["coder_state"].task_plan
-    project_files = read_all_project_files()
+
+    # Review only the files this run actually wrote (one per coder step), not the
+    # whole tree. In repository editing mode PROJECT_ROOT is a real checkout, so
+    # reading everything meant the integrator saw a truncated slice of an
+    # unrelated codebase and could still return full-file rewrites for it.
+    changed_paths = [step.filepath for step in task_plan.steps]
+    project_files = read_selected_project_files(changed_paths)
     project_files = truncate_for_context(project_files, max_chars=12000)
 
-    prompt = integrator_prompt(project_files, _plan_summary(task_plan))
+    # Unchanged repo code the changed files depend on, as read-only reference so
+    # the integrator doesn't flag symbols it simply wasn't shown.
+    reference_context = truncate_for_context(state.get("retrieved_context", ""), max_chars=4000)
+
+    prompt = integrator_prompt(project_files, _plan_summary(task_plan), reference_context)
     result = structured_invoke(IntegrationResult, prompt, agent="integrator", session_id=state.get("session_id"))
 
+    allowed = {p.replace("\\", "/") for p in changed_paths}
+    applied = 0
     for update in result.updates:
+        if update.filepath.replace("\\", "/") not in allowed:
+            logger.warning(
+                f"integrator_agent: discarding out-of-scope update for {update.filepath!r} "
+                f"(not written by this run)"
+            )
+            continue
         content = _strip_markdown_fences(update.content)
         write_file.invoke({"path": update.filepath, "content": content})
+        applied += 1
 
-    return {"integration_fixes": len(result.updates)}
+    return _carry(state, integration_fixes=applied)
 
 
 @traceable(name="repository_agent", run_type="chain")
@@ -162,12 +192,7 @@ def repository_agent(state: dict):
         logger.warning(f"repository_agent: context retrieval failed, proceeding without repo context: {e}")
         context = ""
 
-    # Preserve existing state keys
-    result = {"retrieved_context": context}
-    for key in ["user_prompt", "repo_path", "collection_name", "session_id"]:
-        if key in state:
-            result[key] = state[key]
-    return result
+    return _carry(state, retrieved_context=context)
 
 
 @traceable(name="explainer_agent", run_type="chain")
@@ -180,7 +205,7 @@ def explainer_agent(state: dict) -> dict:
     prompt = explainer_prompt(user_question, retrieved_context)
     answer = simple_invoke(prompt, agent="explainer", session_id=state.get("session_id"))
 
-    return {"answer": answer}
+    return _carry(state, answer=answer)
 
 
 # Project Generation Graph (no repository context)
