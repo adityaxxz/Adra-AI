@@ -1018,7 +1018,14 @@ async def upload_folder(
         # Create repository record
         repo_id = str(uuid.uuid4())
         collection_name = f"repo_{repo_id.replace('-', '_')}"
-        
+
+        # Snapshot file contents into the DB immediately so the repo can be
+        # rehydrated from `repository.files` even if the dyno restarts before
+        # the user triggers indexing (Heroku wipes the ephemeral filesystem on
+        # every restart, so we can't rely solely on the on-disk copy).
+        from agent.repository.service import snapshot_repo_files
+        files_snapshot = await asyncio.to_thread(snapshot_repo_files, upload_dir)
+
         repository = Repository(
             id=repo_id,
             user_id=current_user["sub"],
@@ -1026,7 +1033,8 @@ async def upload_folder(
             local_path=upload_dir,
             provider="local",
             collection_name=collection_name,
-            is_indexed=False
+            is_indexed=False,
+            files=files_snapshot,
         )
         
         db.add(repository)
