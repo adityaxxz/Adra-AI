@@ -54,13 +54,28 @@ from agent.tools import set_project_root
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://adrai:adrai_password@localhost:5433/adrai")
-# Heroku Postgres injects DATABASE_URL as postgres:// (or plain postgresql://),
-# but SQLAlchemy's async engine needs the asyncpg driver scheme.
+# Normalize scheme: Heroku/Neon inject postgres:// or postgresql://, but
+# SQLAlchemy's asyncpg engine requires the postgresql+asyncpg:// scheme.
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
+
+# asyncpg does NOT accept sslmode/channel_binding as URL query params
+# (those are libpq/psycopg2 conventions). Strip them and pass ssl via connect_args.
+_connect_args: dict = {}
+if "sslmode=require" in DATABASE_URL or "sslmode=prefer" in DATABASE_URL:
+    import urllib.parse as _urlparse
+    _parsed = _urlparse.urlparse(DATABASE_URL)
+    _qs = _urlparse.parse_qs(_parsed.query)
+    # Remove libpq-specific params that asyncpg rejects
+    for _param in ("sslmode", "channel_binding"):
+        _qs.pop(_param, None)
+    _new_query = _urlparse.urlencode({k: v[0] for k, v in _qs.items()})
+    DATABASE_URL = _parsed._replace(query=_new_query).geturl()
+    _connect_args["ssl"] = True
+
+engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True, connect_args=_connect_args)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
