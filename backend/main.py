@@ -662,7 +662,10 @@ async def list_repositories(
             "provider": r.provider,
             "collection_name": r.collection_name,
             "is_indexed": r.is_indexed,
-            "files_count": r.files_count,
+            # files_count may be 0/stale for repos indexed before the column was
+            # correctly populated; fall back to the files JSON snapshot count so
+            # the UI always shows the real number.
+            "files_count": r.files_count or len(r.files or {}),
             "chunks_count": r.chunks_count,
             "created_at": r.created_at.isoformat(),
             "last_indexed_at": r.last_indexed_at.isoformat() if r.last_indexed_at else None
@@ -761,7 +764,7 @@ async def get_repository(
         "provider": repository.provider,
         "collection_name": repository.collection_name,
         "is_indexed": repository.is_indexed,
-        "files_count": repository.files_count,
+        "files_count": repository.files_count or len(repository.files or {}),
         "chunks_count": repository.chunks_count,
         "created_at": repository.created_at.isoformat(),
         "updated_at": repository.updated_at.isoformat() if repository.updated_at else None,
