@@ -20,6 +20,7 @@ class CodeChunk(BaseModel):
     class_name: Optional[str] = None
     function_name: Optional[str] = None
     file_hash: str
+    chunk_hash: str = ""  # whitespace-normalized hash of this chunk's content for chunk-level diffing
 
 
 class EmbeddedChunk(BaseModel):
@@ -45,3 +46,4 @@ class IndexingStats(BaseModel):
     files_indexed: int = 0
     files_deleted: int = 0
     chunks_created: int = 0
+    chunks_skipped: int = 0  # chunks whose chunk_hash was unchanged (chunk-level diff)

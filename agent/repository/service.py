@@ -6,7 +6,7 @@ import re
 from agent.repository.scanner import scan_repository
 from agent.repository.chunker import chunk_repository
 from agent.repository.retriever import retrieve
-from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection
+from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection, get_chunk_hashes_for_file, delete_chunk_by_id
 from agent.repository.models import IndexingStats
 
 logger = logging.getLogger(__name__)
@@ -48,13 +48,20 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
         else:
             logger.warning(f"No chunks generated from {len(files)} files.")
     else:
-        # Incremental indexing
+        # Incremental indexing — two-level diff:
+        #   Level 1 (file hash):  unchanged files are skipped entirely.
+        #   Level 2 (chunk hash): for files whose file_hash changed, only
+        #                         chunks whose content actually changed are
+        #                         deleted and re-embedded.  Chunks with the
+        #                         same whitespace-normalised hash are left
+        #                         untouched, saving embedding API calls even
+        #                         when a developer just adds a blank line.
         existing_hashes = get_file_hashes(collection_name)
         existing_files = get_files_in_collection(collection_name)
-        
+
         files = scan_repository(repo_path)
         stats.files_scanned = len(files)
-        
+
         if not files:
             # Handle case where repository is now empty but has existing files
             if existing_files:
@@ -62,48 +69,80 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
                 for file_path in existing_files:
                     delete_file_chunks(file_path, collection_name)
             return stats
-        
+
         current_file_map = {file.path: file for file in files}
-        
-        # Find new files and modified files
-        files_to_index = []
-        
+
+        # Separate files into: skip entirely | need chunk-level diff | brand new
+        files_to_full_index = []   # new files — no existing chunks to compare
+        files_to_chunk_diff = []   # file hash changed — do chunk-level diff
+
         for file in files:
             if file.path not in existing_hashes:
-                # New file
-                files_to_index.append(file)
+                # Brand-new file
+                files_to_full_index.append(file)
             elif file.file_hash != existing_hashes.get(file.path):
-                # Modified file - delete old chunks first
-                delete_file_chunks(file.path, collection_name)
-                files_to_index.append(file)
+                # File content changed — resolve at chunk level
+                files_to_chunk_diff.append(file)
             else:
-                # Unchanged file - skip
+                # File unchanged — skip entirely (Level 1 optimisation)
                 stats.files_skipped += 1
-        
-        # Find deleted files
+
+        # ── Level 2: chunk-level diff for modified files ──────────────────────
+        chunks_to_embed: list = []
+
+        for file in files_to_chunk_diff:
+            from agent.repository.chunker import chunk_repository as _chunk_repo
+            new_chunks = _chunk_repo([file])
+            new_chunk_map = {c.chunk_id: c for c in new_chunks}
+
+            # Stored chunk hashes for this file: {chunk_id: chunk_hash}
+            stored_chunk_hashes = get_chunk_hashes_for_file(file.path, collection_name)
+            stored_chunk_ids = set(stored_chunk_hashes.keys())
+            new_chunk_ids = set(new_chunk_map.keys())
+
+            # Chunks removed from the file → delete from vector store
+            for removed_id in stored_chunk_ids - new_chunk_ids:
+                delete_chunk_by_id(removed_id, collection_name)
+
+            # Chunks that are new or whose content changed → re-embed
+            for chunk_id, chunk in new_chunk_map.items():
+                stored_hash = stored_chunk_hashes.get(chunk_id, "")
+                if chunk.chunk_hash != stored_hash:
+                    # Content changed or chunk is new within this file
+                    if chunk_id in stored_chunk_ids:
+                        delete_chunk_by_id(chunk_id, collection_name)
+                    chunks_to_embed.append(chunk)
+                else:
+                    # Chunk content unchanged — skip (Level 2 optimisation)
+                    stats.chunks_skipped += 1
+
+            stats.files_indexed += 1
+
+        # ── Full index for brand-new files ────────────────────────────────────
+        if files_to_full_index:
+            from agent.repository.chunker import chunk_repository as _chunk_repo2
+            new_file_chunks = _chunk_repo2(files_to_full_index)
+            chunks_to_embed.extend(new_file_chunks)
+            stats.files_indexed += len(files_to_full_index)
+
+        # ── Embed and upsert all changed/new chunks ───────────────────────────
+        if chunks_to_embed:
+            index_chunks(chunks_to_embed, collection_name)
+            stats.chunks_created += len(chunks_to_embed)
+        elif not files_to_chunk_diff and not files_to_full_index:
+            logger.info("All files unchanged — nothing to index.")
+
+        # ── Deleted files ─────────────────────────────────────────────────────
         deleted_files = existing_files - set(current_file_map.keys())
         for file_path in deleted_files:
-            deleted_count = delete_file_chunks(file_path, collection_name)
-            stats.files_deleted += 1
-        
-        # Index new and modified files
-        if files_to_index:
-            chunks = chunk_repository(files_to_index)
-            # Only index if we have chunks (avoid empty chunk lists)
-            if chunks:
-                index_chunks(chunks, collection_name)
-                stats.files_indexed = len(files_to_index)
-                stats.chunks_created = len(chunks)
-            else:
-                logger.warning(f"No chunks generated for {len(files_to_index)} files. Skipping indexing.")
-        
+            delete_file_chunks(file_path, collection_name)
         stats.files_deleted = len(deleted_files)
     
     logger.info(
         f"Indexing statistics for collection '{collection_name}': "
         f"scanned={stats.files_scanned}, skipped={stats.files_skipped}, "
         f"indexed={stats.files_indexed}, deleted={stats.files_deleted}, "
-        f"chunks_created={stats.chunks_created}"
+        f"chunks_created={stats.chunks_created}, chunks_skipped={stats.chunks_skipped}"
     )
     
     return stats

@@ -3,7 +3,7 @@ import ast
 from typing import List, Optional, Set
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from agent.repository.models import CodeChunk, RepositoryFile
-from agent.repository.file_hash import generate_file_hash
+from agent.repository.file_hash import generate_file_hash, generate_chunk_hash
 
 
 # Files with <= this many lines get a whole-file chunk in addition to structural chunks
@@ -53,6 +53,7 @@ class CodeAwareChunker:
                 end_line=line_count,
                 content=file.content,
                 file_hash=file_hash,
+                chunk_hash=generate_chunk_hash(file.content),
             )
             # Prepend so it's retrieved first
             chunks = [whole_chunk] + chunks
@@ -104,6 +105,7 @@ class CodeAwareChunker:
                     end_line=import_end + 1,
                     content="\n".join(import_lines),
                     file_hash=file_hash,
+                    chunk_hash=generate_chunk_hash("\n".join(import_lines)),
                 )
             )
 
@@ -127,6 +129,7 @@ class CodeAwareChunker:
                         content="\n".join(lines[start : end + 1]),
                         class_name=node.name,
                         file_hash=file_hash,
+                        chunk_hash=generate_chunk_hash("\n".join(lines[start : end + 1])),
                     )
                 )
 
@@ -150,6 +153,7 @@ class CodeAwareChunker:
                         content="\n".join(lines[start : end + 1]),
                         function_name=node.name,
                         file_hash=file_hash,
+                        chunk_hash=generate_chunk_hash("\n".join(lines[start : end + 1])),
                     )
                 )
 
@@ -184,6 +188,7 @@ class CodeAwareChunker:
                     end_line=module_end + 1,
                     content="\n".join(module_level_lines),
                     file_hash=file_hash,
+                    chunk_hash=generate_chunk_hash("\n".join(module_level_lines)),
                 )
             )
 
@@ -222,6 +227,7 @@ class CodeAwareChunker:
                     end_line=import_start + len(import_lines),
                     content="\n".join(import_lines),
                     file_hash=file_hash,
+                    chunk_hash=generate_chunk_hash("\n".join(import_lines)),
                 )
             )
 
@@ -248,6 +254,7 @@ class CodeAwareChunker:
                     content="\n".join(stmt_lines),
                     function_name=var_name,
                     file_hash=file_hash,
+                    chunk_hash=generate_chunk_hash("\n".join(stmt_lines)),
                 )
             )
 
@@ -272,6 +279,7 @@ class CodeAwareChunker:
                         content="\n".join(body_lines),
                         function_name=func_name,
                         file_hash=file_hash,
+                        chunk_hash=generate_chunk_hash("\n".join(body_lines)),
                     )
                 )
 
@@ -296,6 +304,7 @@ class CodeAwareChunker:
                         content="\n".join(body_lines),
                         function_name=func_name,
                         file_hash=file_hash,
+                        chunk_hash=generate_chunk_hash("\n".join(body_lines)),
                     )
                 )
 
@@ -319,6 +328,7 @@ class CodeAwareChunker:
                         content="\n".join(body_lines),
                         class_name=class_name,
                         file_hash=file_hash,
+                        chunk_hash=generate_chunk_hash("\n".join(body_lines)),
                     )
                 )
 
@@ -402,6 +412,7 @@ class CodeAwareChunker:
                                     end_line=i + 1,
                                     content=block,
                                     file_hash=file_hash,
+                                    chunk_hash=generate_chunk_hash(block),
                                 )
                             )
                         open_stack.pop(j)
@@ -440,6 +451,7 @@ class CodeAwareChunker:
                         content=match.group(0).strip(),
                         function_name=selector,
                         file_hash=file_hash,
+                        chunk_hash=generate_chunk_hash(match.group(0).strip()),
                     )
                 )
 
@@ -478,6 +490,7 @@ class CodeAwareChunker:
                     content=content,
                     function_name=key,
                     file_hash=file_hash,
+                    chunk_hash=generate_chunk_hash(content),
                 )
             )
 
@@ -509,6 +522,7 @@ class CodeAwareChunker:
                             content="\n".join(current_chunk),
                             function_name=current_heading,
                             file_hash=file_hash,
+                            chunk_hash=generate_chunk_hash("\n".join(current_chunk)),
                         )
                     )
                 current_heading = line.lstrip("#").strip()
@@ -529,6 +543,7 @@ class CodeAwareChunker:
                     content="\n".join(current_chunk),
                     function_name=current_heading,
                     file_hash=file_hash,
+                    chunk_hash=generate_chunk_hash("\n".join(current_chunk)),
                 )
             )
 
@@ -551,6 +566,7 @@ class CodeAwareChunker:
                 end_line=0,
                 content=chunk,
                 file_hash=file_hash,
+                chunk_hash=generate_chunk_hash(chunk),
             )
             for idx, chunk in enumerate(text_chunks)
         ]

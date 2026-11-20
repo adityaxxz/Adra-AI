@@ -39,6 +39,10 @@ adraai-heroku-upgrades.md
 adra-ai-heroku-migration-prompt.md
 cmds.sh
 adra_ai_interview_guide.md
+llm_update_cmd.sh
+scripts/sync-heroku-config.ps1
+
+
 
 
 

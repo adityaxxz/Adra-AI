@@ -91,6 +91,7 @@ def index_chunks(chunks: list[CodeChunk], collection_name: str = None) -> None:
                     "class_name": chunk.class_name or "",
                     "function_name": chunk.function_name or "",
                     "file_hash": chunk.file_hash,
+                    "chunk_hash": chunk.chunk_hash,
                     "content": chunk.content,
                 },
             )
@@ -98,6 +99,20 @@ def index_chunks(chunks: list[CodeChunk], collection_name: str = None) -> None:
 
     _ensure_collection(name, vector_size)
     client.upsert(collection_name=name, points=points)
+
+
+def delete_chunk_by_id(chunk_id: str, collection_name: str = None) -> None:
+    """Delete a single chunk by its chunk_id. Used for chunk-level incremental updates."""
+    name = collection_name or _active_collection_name
+    try:
+        client.delete(
+            collection_name=name,
+            points_selector=Filter(
+                must=[FieldCondition(key="chunk_id", match=MatchValue(value=chunk_id))]
+            ),
+        )
+    except Exception as e:
+        logger.warning(f"delete_chunk_by_id failed for {chunk_id!r} in {name!r}: {e}")
 
 
 def clear_collection(collection_name: str = None) -> None:
@@ -126,6 +141,37 @@ def get_file_hashes(collection_name: str = None) -> dict[str, str]:
         return file_hashes
     except Exception as e:
         logger.warning(f"get_file_hashes failed for collection {name!r}, treating as empty: {e}")
+        return {}
+
+
+def get_chunk_hashes_for_file(file_path: str, collection_name: str = None) -> dict[str, str]:
+    """Get stored chunk hashes for a single file, keyed by chunk_id.
+
+    Used by chunk-level incremental indexing: when a file's file_hash has
+    changed we diff at the chunk level and only re-embed chunks whose
+    chunk_hash differs.
+
+    Returns: {chunk_id: chunk_hash}
+    """
+    name = collection_name or _active_collection_name
+    try:
+        result = client.scroll(
+            collection_name=name,
+            limit=10000,
+            with_payload=True,
+            scroll_filter=Filter(
+                must=[FieldCondition(key="file_path", match=MatchValue(value=file_path))]
+            ),
+        )
+        return {
+            point.payload["chunk_id"]: point.payload.get("chunk_hash", "")
+            for point in result[0]
+            if point.payload.get("chunk_id")
+        }
+    except Exception as e:
+        logger.warning(
+            f"get_chunk_hashes_for_file failed for {file_path!r} in {name!r}: {e}"
+        )
         return {}
 
 
