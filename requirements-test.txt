@@ -1,0 +1,5 @@
+# Test dependencies. Kept separate from requirements-dev.txt because that file
+# pulls in Windows-only packages (pywin32) that CI on Linux cannot install.
+# Install with: pip install -r requirements.txt -r requirements-test.txt
+pytest==9.2.0
+pytest-asyncio==1.5.0

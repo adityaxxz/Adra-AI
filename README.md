@@ -398,14 +398,22 @@ npm run dev
 ### Running Tests
 
 ```bash
-# Backend tests
-cd backend
+# Backend — from the repository root (about 25 seconds)
+pip install -r requirements.txt -r requirements-test.txt
 pytest
 
-# Frontend tests
+# Frontend — there is no test runner yet; CI runs the type-check and a production build
 cd frontend
-npm test
+npx tsc --noEmit
+npm run build
 ```
+
+The backend suite stubs every LLM, embedding and tracing call and points the datastores at nothing
+(see `tests/conftest.py`), so it needs no API keys and never touches real services. Tests marked
+`integration` use a real Postgres — set `TEST_DATABASE_URL`, or run `docker compose up -d postgres`
+(they use a separate `adrai_pytest` database) — and are skipped when none is reachable. Tests marked
+`live` call real LLMs and are excluded by default. GitHub Actions (`.github/workflows/ci.yml`) runs
+the same commands on every push and pull request.
 
 ## Project Structure
 
@@ -433,6 +441,7 @@ Adra-AI/
 │   ├── agent_integration.py  # Bridge layer: agents ↔ database
 │   ├── websocket_manager.py  # WebSocket connection manager + ProgressReporter
 │   ├── background_tasks.py   # Async task executor (ThreadPoolExecutor bridge)
+│   ├── run_store.py          # Persists each finished agent run (tokens, cost, per-agent steps)
 │   ├── error_handlers.py     # Centralized error handling middleware
 │   └── rate_limit.py         # slowapi rate limiter configuration
 ├── frontend/             # Next.js frontend
@@ -440,9 +449,12 @@ Adra-AI/
 │   ├── components/
 │   ├── api-client.ts
 │   └── websocket-hook.ts
+├── tests/                # pytest suite (unit + Postgres integration)
+├── .github/workflows/    # CI: backend tests, frontend type-check + build
 ├── docker-compose.yml    # Docker services
 ├── main.py              # CLI entry point
-└── requirements.txt     # Python dependencies
+├── requirements.txt     # Python dependencies (what Heroku installs)
+└── requirements-test.txt # Test dependencies (pytest)
 ```
 
 ## Troubleshooting
