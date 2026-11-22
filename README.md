@@ -8,7 +8,7 @@
 A multi-agent Codebase Intelligence platform that turns natural-language prompts into working codebases or edits existing repositories. Built with [LangGraph](https://langchain-ai.github.io/langgraph/) and LangChain, Adra-AI features a modern web application with real-time updates and operates in a dual-graph workflow architecture:
 
 1. **Project Generation** — Creates new projects from scratch using a four-stage pipeline (Planner → Architect → Coder → Integrator) without repository context.
-2. **Repository-Aware Editing** — Edits existing repositories using a repository-aware graph (Repository Agent → Planner → Architect → Coder → Integrator) backed by context-aware RAG.
+2. **Repository-Aware Editing** — Edits existing repositories using a repository-aware graph (Repository Agent → Edit Planner → Coder → Integrator) backed by context-aware RAG.
 3. **Question Answering** — Asks questions about codebases without making changes using specialized explainer agents.
 
 ## Architecture
@@ -47,6 +47,7 @@ flowchart TB
     subgraph Agents["Agent Pipeline"]
         Planner[Planner Agent]
         Architect[Architect Agent]
+        EditPlanner[Edit Planner Agent]
         Coder[Coder Agent]
         Integrator[Integrator Agent]
         RepoAgent[Repository Agent]
@@ -113,30 +114,29 @@ flowchart LR
 
     A([User Prompt + Repository])
     B[Repository Agent]
-    C[Planner]
-    D[Architect]
-    E[Coder]
-    F{Tasks Complete?}
-    G[Integrator]
-    H([Updated Project])
+    C[Edit Planner]
+    D[Coder]
+    E{Tasks Complete?}
+    F[Integrator]
+    G([Updated Project])
 
     A --> B
     B --> C
     C --> D
     D --> E
-    E --> F
 
-    F -->|No| E
-    F -->|Yes| G
+    E -->|No| D
+    E -->|Yes| F
 
-    G --> H
+    F --> G
 ```
 
 1. **Repository Agent** — Scans, chunks, and indexes the repository into Qdrant vector store; retrieves relevant code snippets via semantic search
-2. **Planner** — Creates project plan using repository context to prefer modifying existing files over creating duplicate functionality
-3. **Architect** — Breaks the plan into implementation steps with awareness of existing codebase structure
-4. **Coder** — Implements changes using both project context and repository-specific code snippets
-5. **Integrator** — Reviews and fixes cross-file integration issues in the updated codebase
+2. **Edit Planner** — A single planning call that replaces the Planner + Architect pair used for generation. It is grounded in the repository's real file listing (with `.git`, `node_modules`, `.venv` etc. filtered out) plus the retrieved code, and returns an `EditPlan`: a one-line summary and an ordered list of file edits (`filepath` + `change_description`, dependencies first). It prefers modifying existing files over creating new ones, and has no name/tech-stack/features fields, so it can't invent greenfield details just to change one file. The plan is adapted into the same `TaskPlan` the Coder already consumes.
+3. **Coder** — Implements each edit using the file's current contents, sibling files, and repository-specific code snippets
+4. **Integrator** — Reviews **only the files changed in this run** (plus read-only retrieved context) for cross-file issues. A write guard discards any update to a file the Coder didn't touch, so it can never overwrite unrelated repository files
+
+> Generation mode keeps the Planner → Architect pair: when files don't exist yet, there are real contracts between new files to design. For edits, the files and their contracts already exist, so a second planning pass mostly restated the first.
 
 ### Question Answering Mode
 
@@ -284,7 +284,7 @@ Adra-AI integrates [LangSmith](https://smith.langchain.com) for full end-to-end 
 
 When enabled, LangSmith automatically captures every step of agent execution:
 - **LLM calls** — inputs, outputs, token counts, and latency for every Gemini/Groq/NVIDIA invocation
-- **Agent node transitions** — full trace of Planner → Architect → Coder → Integrator graph traversal
+- **Agent node transitions** — full trace of graph traversal (Planner → Architect → Coder → Integrator for generation; Edit Planner → Coder → Integrator for editing)
 - **Tool invocations** — `read_file`, `write_file` calls made by each agent node
 - **Structured output parsing** — validation attempts and schema enforcement for each Pydantic model
 - **Semantic search queries** — repository context retrieved from Qdrant per agent step
@@ -414,7 +414,7 @@ Adra-AI/
 ├── agent/                 # Agent pipeline implementation
 │   ├── graph.py          # LangGraph orchestration (3 compiled graphs)
 │   ├── llm_client.py     # LLM client with throttling, retries & multi-provider support
-│   ├── prompts.py        # Agent prompt templates (Planner, Architect, Coder, Integrator, Explainer)
+│   ├── prompts.py        # Agent prompt templates (Planner, Edit Planner, Architect, Coder, Integrator, Explainer)
 │   ├── state.py          # Pydantic state schemas for type-safe agent I/O
 │   ├── tools.py          # Sandboxed file I/O tools (read_file, write_file, run_cmd)
 │   └── repository/       # Repository-aware RAG pipeline

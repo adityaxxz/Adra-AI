@@ -137,3 +137,5 @@ weights/
 .langsmith/
 coverage/
 coverage.xml
+
+interview_ques.md
