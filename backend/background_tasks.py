@@ -14,6 +14,7 @@ from agent.graph import project_generation_agent, repository_editing_agent, ques
 from agent.repository.service import index_repository, clone_github_repo
 from backend.websocket_manager import ProgressReporter
 from agent.repository.vector_store import set_active_collection
+from agent.llm_client import graph_run_config
 from agent.observability import start_run, get_current_run, record_agent_run
 from agent.logging_config import bind_run_context, clear_run_context
 
@@ -37,6 +38,17 @@ def _serializable_result(state: Dict) -> Dict:
     if not isinstance(state, dict):
         return {}
     return {k: v for k, v in state.items() if k not in _INTERNAL_STATE_KEYS}
+
+
+def _attach_run_metrics(exc: BaseException) -> None:
+    """Carry the partial run metrics out of the executor thread on a failure.
+
+    RunMetrics lives in a contextvar of the worker thread, which the async
+    caller can't read, so without this a run that died mid-pipeline lost
+    everything it had already spent (tokens, cost, retries)."""
+    run = get_current_run()
+    if run is not None:
+        exc.run_metrics = run.snapshot()
 
 
 class BackgroundTaskManager:
@@ -126,6 +138,7 @@ class BackgroundTaskManager:
             return {
                 "success": False,
                 "error": str(e),
+                "metrics": getattr(e, "run_metrics", None),
                 "task_id": task_id
             }
 
@@ -147,13 +160,14 @@ class BackgroundTaskManager:
 
             result = agent.invoke(
                 initial_state,
-                {"recursion_limit": recursion_limit}
+                graph_run_config("generation", session_id, recursion_limit)
             )
             run = get_current_run()
             result["_metrics"] = run.snapshot() if run else None
             return result
         except Exception as e:
             logger.error(f"Error in project generation agent: {e}", exc_info=True)
+            _attach_run_metrics(e)
             raise
         finally:
             clear_run_context()
@@ -236,6 +250,7 @@ class BackgroundTaskManager:
             return {
                 "success": False,
                 "error": str(e),
+                "metrics": getattr(e, "run_metrics", None),
                 "task_id": task_id
             }
 
@@ -263,13 +278,14 @@ class BackgroundTaskManager:
 
             result = agent.invoke(
                 initial_state,
-                {"recursion_limit": recursion_limit}
+                graph_run_config("editing", session_id, recursion_limit)
             )
             run = get_current_run()
             result["_metrics"] = run.snapshot() if run else None
             return result
         except Exception as e:
             logger.error(f"Error in repository editing agent: {e}", exc_info=True)
+            _attach_run_metrics(e)
             raise
         finally:
             clear_run_context()
@@ -358,6 +374,7 @@ class BackgroundTaskManager:
             return {
                 "success": False,
                 "error": str(e),
+                "metrics": getattr(e, "run_metrics", None),
                 "task_id": task_id
             }
 
@@ -385,13 +402,14 @@ class BackgroundTaskManager:
 
             result = agent.invoke(
                 initial_state,
-                {"recursion_limit": recursion_limit}
+                graph_run_config("qa", session_id, recursion_limit)
             )
             run = get_current_run()
             result["_metrics"] = run.snapshot() if run else None
             return result
         except Exception as e:
             logger.error(f"Error in question answering agent: {e}", exc_info=True)
+            _attach_run_metrics(e)
             raise
         finally:
             clear_run_context()

@@ -215,6 +215,18 @@ def _trace_config(run_name: str, agent: Optional[str], session_id: Optional[str]
     return config
 
 
+def graph_run_config(mode: str, session_id: Optional[str], recursion_limit: int) -> dict:
+    """`config=` for a whole-graph `.invoke()`.
+
+    `_trace_config` is only applied to individual LLM calls, so without this the
+    root LangSmith run had no tags/session and Langfuse recorded every node as
+    its own root trace with an empty session id. Passing it at graph level gives
+    one trace per run - named `<mode>_run`, tagged and session-grouped - with
+    the nodes nested under it (verified: node `@observe` spans don't duplicate).
+    """
+    return {**_trace_config(f"{mode}_run", mode, session_id), "recursion_limit": recursion_limit}
+
+
 def structured_invoke(
     schema: Type[T],
     prompt: str,

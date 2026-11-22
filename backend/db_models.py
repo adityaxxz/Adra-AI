@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey, JSON, Enum, Boolean
+from sqlalchemy import Column, String, DateTime, Text, Integer, Float, ForeignKey, JSON, Enum, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -131,3 +131,53 @@ class Session(Base):
     
     # Relationships
     user = relationship("User", back_populates="sessions")
+
+
+class AgentRun(Base):
+    """One execution of an agent graph (generation / editing / Q&A), with what it cost.
+
+    Populated from the in-process `RunMetrics` once a run finishes, so production
+    traffic accumulates into a dataset that can be evaluated. Deleting the session
+    deletes its runs (the prompt is user content; it must go when the chat does).
+    """
+    __tablename__ = "agent_runs"
+
+    id = Column(String, primary_key=True)
+    session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    mode = Column(String, nullable=False, index=True)  # SessionMode value
+    user_prompt = Column(Text, nullable=False)
+    provider = Column(String)
+    model = Column(String)
+
+    status = Column(String, nullable=False, index=True)  # "success" | "failure"
+    error_message = Column(Text)
+
+    llm_calls = Column(Integer, default=0, nullable=False)
+    input_tokens = Column(Integer, default=0, nullable=False)
+    output_tokens = Column(Integer, default=0, nullable=False)
+    cost_usd = Column(Float, default=0.0, nullable=False)
+    # Sum of the individual LLM calls' latencies, not wall-clock time for the run.
+    latency_ms = Column(Float, default=0.0, nullable=False)
+    retries = Column(Integer, default=0, nullable=False)
+    integration_fixes = Column(Integer, default=0, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    steps = relationship("RunStep", back_populates="run", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class RunStep(Base):
+    """Per-agent breakdown of an AgentRun (planner, coder, ... each with its own totals)."""
+    __tablename__ = "run_steps"
+
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    agent = Column(String, nullable=False)
+    calls = Column(Integer, default=0, nullable=False)
+    input_tokens = Column(Integer, default=0, nullable=False)
+    output_tokens = Column(Integer, default=0, nullable=False)
+    latency_ms = Column(Float, default=0.0, nullable=False)
+
+    run = relationship("AgentRun", back_populates="steps")

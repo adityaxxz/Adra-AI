@@ -222,6 +222,20 @@ def get_files_in_collection(collection_name: str = None) -> set[str]:
         return set()
 
 
+def count_chunks(collection_name: str = None) -> int | None:
+    """Exact number of chunks stored in the collection, or None if it can't be read.
+
+    Incremental indexing only reports how many chunks a *run* embedded, so the
+    collection itself is the source of truth for the repo's total.
+    """
+    name = collection_name or _active_collection_name
+    try:
+        return client.count(collection_name=name, exact=True).count
+    except Exception as e:
+        logger.warning(f"count_chunks failed for collection {name!r}: {e}")
+        return None
+
+
 def search(query_embedding: list[float], collection_name: str = None, limit: int = 5) -> list[dict]:
     """Search for similar chunks. Returns a list of {id, score, payload} dicts."""
     name = collection_name or _active_collection_name

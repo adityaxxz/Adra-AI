@@ -36,6 +36,8 @@ from backend.auth import (
 from backend.db_models import Base, User, Project, Repository, Session, SessionMode, ProjectStatus
 from backend.websocket_manager import manager, ProgressReporter
 from backend.background_tasks import task_manager
+from backend.run_store import record_agent_run
+from agent.llm_client import LLM_PROVIDER, MODEL_NAME
 from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
 from backend.error_handlers import (
     http_exception_handler,
@@ -75,7 +77,9 @@ if "sslmode=require" in DATABASE_URL or "sslmode=prefer" in DATABASE_URL:
     DATABASE_URL = _parsed._replace(query=_new_query).geturl()
     _connect_args["ssl"] = True
 
-engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True, connect_args=_connect_args)
+# echo=False: echo=True attached a second plain-text handler (every statement logged twice), buried
+# real events, and logged bound parameters - which included generated source and Q&A answers.
+engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_connect_args)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -790,6 +794,7 @@ async def _run_indexing_task(repository_id: str, session_id: str):
         snapshot_repo_files,
         clone_github_repo,
     )
+    from agent.repository.vector_store import count_chunks
 
     reporter = ProgressReporter(session_id)
 
@@ -844,10 +849,15 @@ async def _run_indexing_task(repository_id: str, session_id: str):
                 return
 
             repository.is_indexed = True
-            repository.files_count = task_result["stats"].files_indexed
-            repository.chunks_count = task_result["stats"].chunks_created
             repository.last_indexed_at = datetime.utcnow()
             repository.files = await asyncio.to_thread(snapshot_repo_files, repo_path)
+            # The task's stats are per-run under incremental indexing (a no-change
+            # re-index reports 0), so take the totals from the snapshot and the
+            # collection instead.
+            repository.files_count = len(repository.files)
+            total_chunks = await asyncio.to_thread(count_chunks, repository.collection_name)
+            if total_chunks is not None:
+                repository.chunks_count = total_chunks
             await db.commit()
 
         except Exception as e:
@@ -1138,6 +1148,12 @@ async def _run_generation_task(
                     collection_name=collection_name,
                     recursion_limit=recursion_limit
                 )
+
+            # Keep what the run cost/did, for evaluation. Never raises (see run_store).
+            await record_agent_run(
+                db, session_id=session_id, mode=mode.value, prompt=prompt,
+                task_result=task_result, provider=LLM_PROVIDER, model=MODEL_NAME,
+            )
 
             result = await db.execute(select(Session).where(Session.id == session_id))
             db_session = result.scalar_one_or_none()
