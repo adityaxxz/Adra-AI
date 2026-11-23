@@ -1,5 +1,8 @@
+import ast
+import json
 import re
 import logging
+from typing import Optional
 from langsmith import traceable
 from agent.prompts import planner_prompt, edit_planner_prompt, architect_prompt, coder_prompt, integrator_prompt, explainer_prompt
 from agent.repository.service import search_repository
@@ -19,6 +22,40 @@ def _strip_markdown_fences(content: str) -> str:
     if match:
         return match.group(1)
     return content
+
+
+def _is_valid(filepath: str, text: str) -> Optional[bool]:
+    """Whether `text` is valid for the file type, or None when there is no cheap check for it."""
+    checks = {".py": ast.parse, ".json": json.loads}
+    for ext, check in checks.items():
+        if filepath.endswith(ext):
+            try:
+                check(text)
+                return True
+            except (SyntaxError, ValueError):
+                return False
+    return None
+
+
+def _fix_double_escaping(content: str, filepath: str) -> str:
+    r"""Undo a file the model returned JSON-escaped twice.
+
+    Sometimes the whole `content` field arrives as one line of literal backslash-n and backslash-quote text
+    (seen live on `gen-03-blog-api`, where it left an unparseable app/schemas.py that the integrator did not
+    repair). Decode it, but only when that is safe: the text has no real newlines and several literal `\n`
+    sequences, and for .py/.json the original is invalid while the decoded text is valid, so a legitimate
+    one-line file such as `print("a\nb\nc")` is never touched."""
+    body = content.strip()
+    if "\n" in body or body.count("\\n") < 3:
+        return content
+    try:
+        fixed = json.loads(f'"{body}"', strict=False)
+    except ValueError:
+        return content
+    if _is_valid(filepath, content) or _is_valid(filepath, fixed) is False:
+        return content
+    logger.warning(f"{filepath}: model returned double-escaped content; decoded it ({len(content)} -> {len(fixed)} chars)")
+    return fixed
 
 
 def _carry(state: dict, **updates) -> dict:
@@ -148,7 +185,7 @@ def coder_agent(state: dict) -> dict:
     )
 
     result = structured_invoke(CoderOutput, prompt, agent="coder", session_id=session_id)
-    content = _strip_markdown_fences(result.content)
+    content = _fix_double_escaping(_strip_markdown_fences(result.content), curr_task.filepath)
     write_file.invoke({"path": curr_task.filepath, "content": content})
 
     coder_state.current_step_idx += 1
@@ -184,7 +221,7 @@ def integrator_agent(state: dict) -> dict:
                 f"(not written by this run)"
             )
             continue
-        content = _strip_markdown_fences(update.content)
+        content = _fix_double_escaping(_strip_markdown_fences(update.content), update.filepath)
         write_file.invoke({"path": update.filepath, "content": content})
         applied += 1
 
