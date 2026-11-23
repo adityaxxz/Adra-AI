@@ -59,13 +59,102 @@ def test_structured_invoke_retries_a_transient_failure_then_succeeds(monkeypatch
     assert r.calls == 2 and run.snapshot()["retries"] == 1
 
 
-def test_rate_limit_errors_are_raised_immediately_without_retrying(monkeypatch):
-    r = FakeRunnable([RuntimeError("429 Too Many Requests"), {"raw": None, "parsed": Out(value="never"), "parsing_error": None}])
+# ---------------------------------------------------------------- rate-limit backoff
+
+GROQ_TPM_429 = ("Error code: 429 - {'error': {'message': 'Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute "
+                "(TPM): Limit 8000, Used 6105, Requested 2426. Please try again in 3.9825s.', 'code': 'rate_limit_exceeded'}}")
+GEMINI_DAILY_429 = ("429 RESOURCE_EXHAUSTED. {'error': {'message': 'Quota exceeded for metric: generate_content_free_tier_requests, "
+                    "limit: 20 ... Generate content requests per day limit exceeded on Free Tier. Please retry in 20h14m46.7s.'}}")
+OK = {"raw": None, "parsed": Out(value="ok"), "parsing_error": None}
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    waited = []
+    monkeypatch.setattr(L.time, "sleep", waited.append)
+    return waited
+
+
+def _structured(monkeypatch, outcomes):
+    r = FakeRunnable(outcomes)
     _patch_structured(monkeypatch, r)
     monkeypatch.setattr(L, "SUPPORTS_INCLUDE_RAW", True)
+    return r
+
+
+def test_a_per_minute_rate_limit_is_waited_out_using_the_providers_hint(monkeypatch, sleeps):
+    """The first live eval run failed a whole generation on 'try again in 3.98s'."""
+    run = O.start_run("s")
+    r = _structured(monkeypatch, [RuntimeError(GROQ_TPM_429), OK])
+    assert L.structured_invoke(Out, "p", agent="coder").value == "ok"
+    assert r.calls == 2 and sleeps == [pytest.approx(4.9825)]
+    assert run.snapshot()["retries"] == 0, "a rate limit is not a malformed-output retry"
+
+
+def test_without_a_hint_it_backs_off_exponentially_and_gives_up_after_the_budget(monkeypatch, sleeps):
+    r = _structured(monkeypatch, [RuntimeError("429 Too Many Requests") for _ in range(L.RATE_LIMIT_RETRIES + 1)])
     with pytest.raises(RuntimeError, match="429"):
         L.structured_invoke(Out, "p")
-    assert r.calls == 1
+    assert r.calls == L.RATE_LIMIT_RETRIES + 1
+    assert sleeps == [5.0, 10.0, 20.0][:L.RATE_LIMIT_RETRIES]
+
+
+def test_a_daily_quota_is_not_waited_on(monkeypatch, sleeps):
+    r = _structured(monkeypatch, [RuntimeError(GEMINI_DAILY_429), OK])
+    with pytest.raises(RuntimeError, match="RESOURCE_EXHAUSTED"):
+        L.structured_invoke(Out, "p")
+    assert r.calls == 1 and sleeps == []
+
+
+def test_a_hint_longer_than_the_cap_is_not_waited_on(monkeypatch, sleeps):
+    r = _structured(monkeypatch, [RuntimeError("429 Rate limit reached on tokens per day. Please try again in 17m30s."), OK])
+    with pytest.raises(RuntimeError, match="429"):
+        L.structured_invoke(Out, "p")
+    assert r.calls == 1 and sleeps == []
+
+
+def test_rate_limit_waits_do_not_use_up_the_malformed_output_retries(monkeypatch, sleeps):
+    outcomes = ([RuntimeError(GROQ_TPM_429)] * L.RATE_LIMIT_RETRIES
+                + [ValueError(f"bad json {i}") for i in range(L.MAX_RETRIES - 1)] + [OK])
+    r = _structured(monkeypatch, outcomes)
+    assert L.structured_invoke(Out, "p").value == "ok"
+    assert r.calls == len(outcomes) and len(sleeps) == L.RATE_LIMIT_RETRIES
+
+
+def test_latency_is_recorded_for_the_successful_attempt_not_the_wait(monkeypatch, sleeps):
+    clock = [100.0]
+    monkeypatch.setattr(L.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(L.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    latencies = []
+    monkeypatch.setattr(L, "record_call", lambda model, provider, usage, latency_ms, agent=None: latencies.append(latency_ms))
+
+    class Slow(FakeRunnable):
+        def invoke(self, prompt, config=None):
+            clock[0] += 0.2
+            return super().invoke(prompt, config)
+
+    _patch_structured(monkeypatch, Slow([RuntimeError(GROQ_TPM_429), OK]))
+    monkeypatch.setattr(L, "SUPPORTS_INCLUDE_RAW", True)
+    L.structured_invoke(Out, "p")
+    assert latencies == [pytest.approx(200.0)], "the 5s wait must not show up as model latency"
+
+
+def test_simple_invoke_also_waits_out_a_rate_limit(monkeypatch, sleeps):
+    class Msg:
+        content = "pong"
+        usage_metadata = None
+
+    seen = []
+
+    def invoke(prompt, config):
+        seen.append(prompt)
+        if len(seen) == 1:
+            raise RuntimeError(GROQ_TPM_429)
+        return Msg()
+
+    monkeypatch.setattr(L, "llm", FakeLLM(invoke=invoke))
+    assert L.simple_invoke("ping", agent="explainer") == "pong"
+    assert len(seen) == 2 and sleeps == [pytest.approx(4.9825)]
 
 
 def test_gives_up_after_max_retries(monkeypatch):

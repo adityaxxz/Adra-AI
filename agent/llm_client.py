@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.observability import record_call, record_retry, get_current_run, get_langfuse_handler
+from agent.rate_limit import classify_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,9 @@ T = TypeVar("T", bound=BaseModel)
 MIN_INTERVAL_SEC = float(os.getenv("LLM_MIN_INTERVAL_SEC", "2.1"))
 MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "5"))
 MAX_CONTENT_CHARS = int(os.getenv("LLM_MAX_CONTENT_CHARS", "10000"))
+# Rate limits (429) are waited out, separately from the retries above for malformed output.
+RATE_LIMIT_RETRIES = int(os.getenv("LLM_RATE_LIMIT_RETRIES", "3"))
+RATE_LIMIT_MAX_WAIT_SEC = float(os.getenv("LLM_RATE_LIMIT_MAX_WAIT_SEC", "60"))
 
 lock = threading.Lock()
 last_call_at = 0.0
@@ -117,6 +121,36 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
         token in msg
         for token in ("429", "rate limit", "resource exhausted", "too many requests", "quota exceeded")
     )
+
+
+def _rate_limit_wait(exc: BaseException, retry_number: int) -> Optional[float]:
+    """Seconds to wait before retrying after a rate limit, or None when waiting can't help
+    (a daily quota, or a provider hint longer than RATE_LIMIT_MAX_WAIT_SEC)."""
+    kind, hint = classify_rate_limit(exc)
+    if kind == "daily" or hint > RATE_LIMIT_MAX_WAIT_SEC:
+        return None
+    # Providers say when the window frees up ("try again in 3.98s"); without a hint back off 5s, 10s, 20s...
+    return hint + 1.0 if hint else min(5.0 * 2 ** retry_number, RATE_LIMIT_MAX_WAIT_SEC)
+
+
+def _with_rate_limit_backoff(call, agent: Optional[str] = None):
+    """Run `call()`; on a rate limit wait the provider's suggested time and run it again, up to
+    RATE_LIMIT_RETRIES times. Without this a Groq tokens-per-minute 429 that clears in 4 seconds
+    failed the whole generation. Waits happen in the background-task thread, not the HTTP request."""
+    retries = 0
+    while True:
+        try:
+            return call()
+        except Exception as e:
+            if not _is_rate_limit_error(e) or retries >= RATE_LIMIT_RETRIES:
+                raise
+            wait = _rate_limit_wait(e, retries)
+            if wait is None:
+                raise
+            retries += 1
+            logger.warning(f"{LLM_PROVIDER.upper()} rate limit hit ({agent or 'llm'}); waiting {wait:.1f}s "
+                           f"before retry {retries}/{RATE_LIMIT_RETRIES}: {str(e)[:160]}")
+            time.sleep(wait)
 
 
 def _throttle(extra_wait: float = 0.0) -> None:
@@ -251,8 +285,14 @@ def structured_invoke(
         _throttle(extra_wait=attempt * MIN_INTERVAL_SEC)
 
         try:
-            start = time.monotonic()
-            output = runnable.invoke(prompt, config=config)
+            start = 0.0
+
+            def _call():
+                nonlocal start
+                start = time.monotonic()            # restarted per attempt so rate-limit waits don't inflate latency
+                return runnable.invoke(prompt, config=config)
+
+            output = _with_rate_limit_backoff(_call, agent)
             latency_ms = (time.monotonic() - start) * 1000
 
             raw = output.get("raw") if isinstance(output, dict) else None
@@ -288,8 +328,14 @@ def simple_invoke(prompt: str, *, agent: Optional[str] = None, session_id: Optio
         _throttle(extra_wait=attempt * MIN_INTERVAL_SEC)
 
         try:
-            start = time.monotonic()
-            result = llm.invoke(prompt, config=config)
+            start = 0.0
+
+            def _call():
+                nonlocal start
+                start = time.monotonic()            # restarted per attempt so rate-limit waits don't inflate latency
+                return llm.invoke(prompt, config=config)
+
+            result = _with_rate_limit_backoff(_call, agent)
             latency_ms = (time.monotonic() - start) * 1000
 
             if result is None:

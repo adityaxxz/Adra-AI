@@ -149,7 +149,8 @@ def explainer_prompt(user_question: str, repository_context: str) -> str:
         - Explain how the feature/implementation works
         - Reference specific files and code snippets when relevant
         - If the context doesn't contain enough information to answer, state what additional context would be needed
-        - Be concise but thorough in your explanation
+        - If the question asks for a particular length or format (for example "in short", "briefly", "in one line", "in detail"), follow that exactly: a short answer is two or three sentences with no headings, tables or bullet lists
+        - Otherwise be concise but thorough in your explanation
 
         Answer the user's question directly and informatively.
     """
