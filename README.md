@@ -449,6 +449,7 @@ Adra-AI/
 │   ├── websocket_manager.py  # WebSocket connection manager + ProgressReporter
 │   ├── background_tasks.py   # Async task executor (ThreadPoolExecutor bridge)
 │   ├── run_store.py          # Persists each finished agent run (tokens, cost, per-agent steps)
+│   ├── feedback_store.py     # Saves a user's thumbs up/down on a run (POST /feedback)
 │   ├── error_handlers.py     # Centralized error handling middleware
 │   └── rate_limit.py         # slowapi rate limiter configuration
 ├── frontend/             # Next.js frontend

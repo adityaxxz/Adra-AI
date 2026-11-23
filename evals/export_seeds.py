@@ -6,6 +6,9 @@ Privacy: prompts are user content, so this REQUIRES an explicit email and only r
 runs. Output goes to evals/datasets/seed_candidates.yaml, which is not loaded by the suite - a human
 reviews each candidate, fills in `fixture`/`expect`, and moves it into generation/editing/qa.yaml.
 Prompts the dataset already contains, and the harness's own `eval-*` sessions, are skipped.
+
+If the user rated a run (thumbs up/down in the app), the candidate carries that `feedback` - a thumbs-down
+prompt is the most useful kind to turn into a regression case. The comment is user content too.
 """
 import argparse
 import asyncio
@@ -23,10 +26,11 @@ DEFAULT_OUT = ROOT / "evals" / "datasets" / "seed_candidates.yaml"
 _MODE_NAMES = {"generation": "generation", "editing": "editing", "question_answering": "question_answering"}
 
 _QUERY = """
-select r.mode, r.user_prompt, r.status
+select r.mode, r.user_prompt, r.status, f.rating, f.comment
 from agent_runs r
 join sessions s on s.id = r.session_id
 join users u on u.id = s.user_id
+left join feedback f on f.run_id = r.id and f.user_id = u.id
 where lower(u.email) = lower($1) and r.session_id not like 'eval-%'
 order by r.created_at
 """
@@ -39,9 +43,11 @@ def normalise(prompt: str) -> str:
 def build_candidates(rows: list, existing_prompts: set, mode: str | None = None) -> list[dict]:
     """Unique prompts (first occurrence wins), minus ones the dataset already has."""
     seen = {normalise(p) for p in existing_prompts}
-    out, counters = [], {}
+    out, counters, by_key = [], {}, {}
     for r in rows:
         key = normalise(r["user_prompt"])
+        if key in by_key and r.get("rating"):
+            by_key[key].setdefault("feedback", _feedback(r))     # a repeat of the prompt that the user did rate
         if not key or key in seen or (mode and r["mode"] != mode):
             continue
         seen.add(key)
@@ -52,8 +58,15 @@ def build_candidates(rows: list, existing_prompts: set, mode: str | None = None)
         if m in ("editing", "question_answering"):
             case["fixture"] = None            # these refer to the user's own repository: pick or build a fixture for it
             case["expect"] = {}
+        if r.get("rating"):
+            case["feedback"] = _feedback(r)
+        by_key[key] = case
         out.append(case)
     return out
+
+
+def _feedback(row: dict) -> dict:
+    return {"rating": row["rating"], "comment": row.get("comment")}
 
 
 async def fetch_rows(dsn: str, email: str) -> list:
