@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { repositoriesAPI, generationAPI, projectsAPI } from '../../../api-client';
+import { repositoriesAPI, generationAPI, projectsAPI, feedbackAPI } from '../../../api-client';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 import { Sidebar } from '../../../components/Sidebar';
@@ -177,7 +177,7 @@ function RepositoryPageInner() {
         const answer = latestMessage.result?.answer || latestMessage.result?.message ||
           latestMessage.data?.answer || latestMessage.data?.message || latestMessage.message;
         if (answer && answer !== 'No response' && answer !== 'Question answered') {
-          addAssistantMessage(String(answer));
+          addAssistantMessage(String(answer), undefined, sessionId ?? undefined);
         }
       } else if (latestMessage.type === 'error') {
         addAssistantMessage(`Error: ${latestMessage.error || 'Unknown error'}`);
@@ -187,7 +187,7 @@ function RepositoryPageInner() {
         const result = latestMessage.result || {};
         const editedFiles: Record<string, string> = result.edited_files || {};
         const message = result.message || latestMessage.message || 'Editing complete.';
-        addAssistantMessage(message, editedFiles);
+        addAssistantMessage(message, editedFiles, sessionId ?? undefined);
         if (Object.keys(editedFiles).length > 0) {
           setRepository(prev => prev ? { ...prev, files: { ...(prev.files || {}), ...editedFiles } } : prev);
           setTimeout(() => loadRepository(), 1500);
@@ -211,11 +211,13 @@ function RepositoryPageInner() {
     if (mode === 'ask') {
       const answer = result.answer ?? result.result?.answer;
       addAssistantMessage(
-        answer ? String(answer) : 'The run finished but no answer was returned. Please try again.'
+        answer ? String(answer) : 'The run finished but no answer was returned. Please try again.',
+        undefined,
+        answer && sessionId ? sessionId : undefined
       );
     } else {
       const editedFiles: Record<string, string> = result.edited_files || {};
-      addAssistantMessage(result.message || 'Editing complete.', editedFiles);
+      addAssistantMessage(result.message || 'Editing complete.', editedFiles, sessionId ?? undefined);
       if (Object.keys(editedFiles).length > 0) {
         setRepository(prev =>
           prev ? { ...prev, files: { ...(prev.files || {}), ...editedFiles } } : prev
@@ -353,14 +355,26 @@ function RepositoryPageInner() {
   };
 
   // ---- Session helpers ----
-  const addAssistantMessage = (content: string, editedFiles?: Record<string, string>) => {
-    const msg: ChatMessageType = { role: 'assistant', content, editedFiles };
+  // `runSessionId` is the backend session that produced the reply; only replies from a real run get rating buttons.
+  const addAssistantMessage = (content: string, editedFiles?: Record<string, string>, runSessionId?: string) => {
+    const msg: ChatMessageType = { role: 'assistant', content, editedFiles, runSessionId };
     setCurrentSession(prev => {
       const updated = appendMessage(prev, msg);
       saveChatSession(repositoryId, updated);
       return updated;
     });
     setIsProcessing(false);
+  };
+
+  const handleRate = async (idx: number, rating: 'up' | 'down') => {
+    const runSessionId = currentSession.messages[idx]?.runSessionId;
+    if (!runSessionId) return;
+    await feedbackAPI.submit({ session_id: runSessionId, rating });   // throws on failure; the button shows the error
+    setCurrentSession(prev => {
+      const updated = { ...prev, messages: prev.messages.map((m, i) => (i === idx ? { ...m, rating } : m)) };
+      saveChatSession(repositoryId, updated);
+      return updated;
+    });
   };
 
   const addUserMessage = (content: string) => {
@@ -722,6 +736,7 @@ function RepositoryPageInner() {
                   }}
                   animate={idx === currentSession.messages.length - 1}
                   userName={user?.name}
+                  onRate={rating => handleRate(idx, rating)}
                 />
               ))
             )}

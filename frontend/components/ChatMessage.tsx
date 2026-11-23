@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChatMessage as ChatMessageType } from '../lib/chatStorage';
 
 interface ChatMessageProps {
@@ -8,6 +8,8 @@ interface ChatMessageProps {
   onOpenFile?: (filePath: string, content: string) => void;
   animate?: boolean;
   userName?: string;
+  /** Rate this reply. Rejects if it could not be saved. Thumbs only show when this and message.runSessionId exist. */
+  onRate?: (rating: 'up' | 'down') => Promise<void>;
 }
 
 function parseInlineMarkdown(text: string): string {
@@ -122,7 +124,57 @@ function AIAvatar() {
   );
 }
 
-export function ChatMessage({ message, onOpenFile, animate = true, userName }: ChatMessageProps) {
+function RatingButtons({ rating, onRate }: { rating?: 'up' | 'down'; onRate: (r: 'up' | 'down') => Promise<void> }) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const rate = async (value: 'up' | 'down') => {
+    if (pending || value === rating) return;
+    setPending(true);
+    setFailed(false);
+    try {
+      await onRate(value);
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const button = (value: 'up' | 'down', label: string, path: string) => {
+    const active = rating === value;
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={active}
+        title={label}
+        disabled={pending}
+        onClick={() => rate(value)}
+        className="p-1 rounded-md transition-colors disabled:opacity-50"
+        style={{ color: active ? '#818cf8' : 'var(--text-muted)', background: active ? 'rgba(99,102,241,0.15)' : 'transparent' }}
+      >
+        <svg className="w-3.5 h-3.5" fill={active ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={path} />
+        </svg>
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      {button('up', 'Good response', 'M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3')}
+      {button('down', 'Bad response', 'M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zM17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17')}
+      {failed && (
+        <span className="text-[10px]" role="alert" style={{ color: '#f87171' }}>
+          Couldn't save your rating
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function ChatMessage({ message, onOpenFile, animate = true, userName, onRate }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasEditedFiles = message.editedFiles && Object.keys(message.editedFiles).length > 0;
 
@@ -202,12 +254,15 @@ export function ChatMessage({ message, onOpenFile, animate = true, userName }: C
           </div>
         )}
 
-        {/* Timestamp */}
-        {message.timestamp && (
-          <span className="text-[10px] px-1" style={{ color: 'var(--text-muted)' }}>
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        )}
+        {/* Timestamp + rating */}
+        <div className="flex items-center gap-2 px-1">
+          {message.timestamp && (
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          {!isUser && message.runSessionId && onRate && <RatingButtons rating={message.rating} onRate={onRate} />}
+        </div>
       </div>
     </div>
   );

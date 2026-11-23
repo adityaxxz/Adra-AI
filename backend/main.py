@@ -11,8 +11,8 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import select, func, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_fastapi_instrumentator import Instrumentator
-from typing import Optional, List
-from pydantic import BaseModel, ValidationError
+from typing import Optional, List, Literal
+from pydantic import BaseModel, ValidationError, Field
 import os
 import uuid
 from datetime import datetime
@@ -37,6 +37,7 @@ from backend.db_models import Base, User, Project, Repository, Session, SessionM
 from backend.websocket_manager import manager, ProgressReporter
 from backend.background_tasks import task_manager
 from backend.run_store import record_agent_run
+from backend.feedback_store import save_feedback
 from agent.llm_client import LLM_PROVIDER, MODEL_NAME
 from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
 from backend.error_handlers import (
@@ -220,6 +221,12 @@ class RepositoryCreate(BaseModel):
     url: Optional[str] = None
     local_path: Optional[str] = None
     provider: str = "github"
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    rating: Literal["up", "down"]
+    comment: Optional[str] = Field(default=None, max_length=2000)
 
 
 class GenerationRequest(BaseModel):
@@ -1400,6 +1407,25 @@ async def list_sessions(
         }
         for s in sessions
     ]
+
+
+@app.post("/feedback")
+async def submit_feedback(
+    request: FeedbackRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Rate (thumbs up/down) the answer or change a session produced. Rating again replaces the rating."""
+    feedback = await save_feedback(
+        db, session_id=request.session_id, user_id=current_user["sub"],
+        rating=request.rating, comment=request.comment,
+    )
+    if feedback is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No finished run found for that session"
+        )
+    return {"run_id": feedback.run_id, "rating": feedback.rating}
 
 
 # =========================

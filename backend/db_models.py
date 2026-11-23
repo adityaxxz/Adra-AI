@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, Integer, Float, ForeignKey, JSON, Enum, Boolean
+from sqlalchemy import Column, String, DateTime, Text, Integer, Float, ForeignKey, JSON, Enum, Boolean, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -181,3 +181,23 @@ class RunStep(Base):
     latency_ms = Column(Float, default=0.0, nullable=False)
 
     run = relationship("AgentRun", back_populates="steps")
+
+
+class Feedback(Base):
+    """A user's thumbs up/down on one AgentRun (the signal behind the feedback flywheel).
+
+    One rating per (run, user); rating again replaces it. Deleting the run (which happens when its
+    session is deleted) or the user deletes the rating, so a comment never outlives the chat it is about.
+    """
+    __tablename__ = "feedback"
+    __table_args__ = (UniqueConstraint("run_id", "user_id", name="uq_feedback_run_user"),)
+
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    rating = Column(String, nullable=False, index=True)  # "up" | "down"
+    comment = Column(Text)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

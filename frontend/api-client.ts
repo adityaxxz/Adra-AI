@@ -152,4 +152,12 @@ export const generationAPI = {
   },
 };
 
+export const feedbackAPI = {
+  // Rate the run behind a chat message (one run per backend session). Rating again replaces it.
+  submit: async (data: { session_id: string; rating: 'up' | 'down'; comment?: string }) => {
+    const response = await api.post('/feedback', data);
+    return response.data;
+  },
+};
+
 export default api;

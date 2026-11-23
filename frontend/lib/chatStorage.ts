@@ -8,6 +8,8 @@ export interface ChatMessage {
   content: string;
   editedFiles?: Record<string, string>;
   timestamp?: string;
+  runSessionId?: string;       // backend session that produced this reply; what a rating is sent against
+  rating?: 'up' | 'down';      // the user's rating of that reply, once saved
 }
 
 export interface ChatSession {
