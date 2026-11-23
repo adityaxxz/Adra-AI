@@ -56,7 +56,9 @@
     nothing catches - the request fails with a 500. (add_todo guards against the missing file; load_todos does not.)
   expect:
     sources: ["storage.py", "main.py"]
-    answer_contains: [["filenotfound", "does not exist", "doesn't exist", "missing", "not found", "error", "exception", "500", "crash"]]
+    # Must state the failure itself. A hedge like "if the storage layer raised an error when the file is missing"
+    # contains "error" and "missing" and used to pass a wrong answer (200 OK with an empty list).
+    answer_contains: [["filenotfound", "500", "internal server error", "crash", "unhandled"]]
   judge:
     notes: Needs reasoning across two files. Answering "it returns an empty list" is wrong.
 

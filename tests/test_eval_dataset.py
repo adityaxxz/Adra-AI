@@ -134,3 +134,16 @@ def test_unanswerable_cases_reject_an_invented_mechanism():
     for case in (c for c in QA if c["expect"].get("unanswerable")):
         invented = "It authenticates users with JWT bearer tokens issued by an OAuth2 provider."
         assert _required_failures(E.evaluate_answer(case, invented, case["expect"]["sources"])), case["id"]
+
+
+def test_qa_05_rejects_the_hedged_wrong_answer_the_agent_actually_gave():
+    """Live 2026-11-23: the agent never saw storage.py, guessed 'an empty list with 200 OK', and hedged with
+    'if the storage layer raised an error when the file is missing'. A bare 'error'/'missing' keyword check passed it."""
+    from evals.evaluators import structural as S
+    case = next(c for c in CASES if c["id"] == "qa-05-todo-get-before-create")
+    wrong = ("In the typical implementation of storage.load_todos() (not shown here) it returns an empty list, so the endpoint "
+             "responds 200 OK with []. If the storage layer were to raise an error when the file is missing, that would be "
+             "the only deviation.")
+    assert S.answer_contains(wrong, case["expect"]["answer_contains"]).passed is False
+    assert S.answer_contains(case["reference"], case["expect"]["answer_contains"]).passed
+    assert S.answer_contains("It raises FileNotFoundError, so the request fails with a 500.", case["expect"]["answer_contains"]).passed
