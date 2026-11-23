@@ -139,3 +139,8 @@ coverage/
 coverage.xml
 
 interview_ques.md
+
+# --- Eval harness ---
+# run reports; and exported candidates, which contain real user prompts
+evals/reports/
+evals/datasets/seed_candidates.yaml

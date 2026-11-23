@@ -415,6 +415,13 @@ The backend suite stubs every LLM, embedding and tracing call and points the dat
 `live` call real LLMs and are excluded by default. GitHub Actions (`.github/workflows/ci.yml`) runs
 the same commands on every push and pull request.
 
+### Evaluating the agents
+
+`evals/` contains a golden dataset and a harness that run the real generation, editing and Q&A
+pipelines and score them with deterministic checks (syntax, cross-file imports, surgical-edit
+checks), optional executable checks, retrieval metrics and an LLM judge. See
+[`evals/README.md`](evals/README.md). It makes real LLM calls, so it is not part of `pytest`.
+
 ## Project Structure
 
 ```
@@ -450,6 +457,7 @@ Adra-AI/
 │   ├── api-client.ts
 │   └── websocket-hook.ts
 ├── tests/                # pytest suite (unit + Postgres integration)
+├── evals/                # golden dataset + harness that scores the real agents
 ├── .github/workflows/    # CI: backend tests, frontend type-check + build
 ├── docker-compose.yml    # Docker services
 ├── main.py              # CLI entry point

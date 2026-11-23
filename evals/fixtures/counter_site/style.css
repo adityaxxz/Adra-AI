@@ -1,0 +1,18 @@
+body {
+  font-family: system-ui, sans-serif;
+  background: #ffffff;
+  color: #222222;
+  margin: 0;
+}
+
+main {
+  max-width: 24rem;
+  margin: 4rem auto;
+  text-align: center;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+}

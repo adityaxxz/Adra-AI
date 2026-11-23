@@ -1,0 +1,301 @@
+# Repository-editing cases: an existing repo (evals/fixtures/<fixture>) plus a change request.
+# The agent edits a scratch copy; "before" and "after" are then compared.
+#
+# `unmodified` is the surgical-edit check: files the change has no business touching must stay byte-identical.
+# `solution` maps a path to its complete corrected content. It is used by tests to prove the case's checks
+# are satisfiable, and shown to the judge as a reference. Cases without one are open-ended.
+# Every case must FAIL against the untouched fixture, so doing nothing can never pass.
+
+- id: edit-01-todo-delete
+  mode: editing
+  source: hand-written
+  fixture: todo_api
+  prompt: Add a DELETE /todos/{id} endpoint that removes a todo and returns 404 if no todo has that id.
+  expect:
+    modified: ["main.py"]
+    unmodified: ["models.py", "requirements.txt", "README.md"]
+    contains:
+      - {file: "main.py", regex: '@app\.delete'}
+    preserved_symbols:
+      - {file: "main.py", names: [list_todos, create_todo, complete_todo]}
+      - {file: "storage.py", names: [load_todos, save_todos, add_todo, mark_done]}
+    exec:
+      - name: delete works and a second delete is 404
+        snippet: |
+          from fastapi.testclient import TestClient
+          import main
+          c = TestClient(main.app)
+          r = c.post("/todos", json={"title": "a"}); assert r.status_code == 201, r.text
+          tid = r.json()["id"]
+          assert c.delete(f"/todos/{tid}").status_code in (200, 204)
+          assert c.delete(f"/todos/{tid}").status_code == 404
+          assert all(t["id"] != tid for t in c.get("/todos").json())
+  solution:
+    main.py: |
+      from fastapi import FastAPI, HTTPException
+
+      import storage
+      from models import Todo, TodoCreate
+
+      app = FastAPI(title="Todo API")
+
+
+      @app.get("/todos", response_model=list[Todo])
+      def list_todos():
+          """Return every todo."""
+          return storage.load_todos()
+
+
+      @app.post("/todos", response_model=Todo, status_code=201)
+      def create_todo(payload: TodoCreate):
+          """Create a todo from a title."""
+          return storage.add_todo(payload.title)
+
+
+      @app.put("/todos/{todo_id}/done", response_model=Todo)
+      def complete_todo(todo_id: int):
+          """Mark a todo as done. 404 if it does not exist."""
+          todo = storage.mark_done(todo_id)
+          if todo is None:
+              raise HTTPException(status_code=404, detail="Todo not found")
+          return todo
+
+
+      @app.delete("/todos/{todo_id}", status_code=204)
+      def delete_todo(todo_id: int):
+          """Delete a todo. 404 if it does not exist."""
+          if not storage.delete_todo(todo_id):
+              raise HTTPException(status_code=404, detail="Todo not found")
+    storage.py: |
+      """Todo persistence: a single JSON file on disk."""
+      import json
+      import os
+
+      DATA_FILE = "todos.json"
+
+
+      def load_todos() -> list[dict]:
+          """Read all todos from DATA_FILE."""
+          with open(DATA_FILE, "r", encoding="utf-8") as f:
+              return json.load(f)
+
+
+      def save_todos(todos: list[dict]) -> None:
+          """Write all todos to DATA_FILE."""
+          with open(DATA_FILE, "w", encoding="utf-8") as f:
+              json.dump(todos, f, indent=2)
+
+
+      def add_todo(title: str) -> dict:
+          """Append a new, not-done todo and return it."""
+          todos = load_todos() if os.path.exists(DATA_FILE) else []
+          todo = {"id": len(todos) + 1, "title": title, "done": False}
+          todos.append(todo)
+          save_todos(todos)
+          return todo
+
+
+      def mark_done(todo_id: int):
+          """Mark a todo as done and return it, or None if no todo has that id."""
+          todos = load_todos()
+          for todo in todos:
+              if todo["id"] == todo_id:
+                  todo["done"] = True
+                  save_todos(todos)
+                  return todo
+          return None
+
+
+      def delete_todo(todo_id: int) -> bool:
+          """Delete the todo with this id. Return False if there is none."""
+          todos = load_todos()
+          remaining = [t for t in todos if t["id"] != todo_id]
+          if len(remaining) == len(todos):
+              return False
+          save_todos(remaining)
+          return True
+  judge:
+    notes: Deleting must persist to the JSON file, and the other endpoints must behave exactly as before.
+
+- id: edit-04-truncate-bug
+  mode: editing
+  source: hand-written
+  fixture: text_utils
+  prompt: >-
+    truncate() in strings.py does not follow its docstring: short strings get the suffix appended anyway, and long
+    ones come out longer than the limit. Fix it.
+  expect:
+    modified: ["strings.py"]
+    unmodified: ["mathx.py", "cli.py", "README.md"]
+    preserved_symbols:
+      - {file: "strings.py", names: [slugify, truncate, word_count]}
+    exec:
+      - name: truncate follows its docstring
+        snippet: |
+          from strings import truncate
+          assert truncate("hello", 10) == "hello"
+          assert truncate("abc", 3) == "abc"
+          assert truncate("hello world", 8) == "hello..."
+          assert len(truncate("abcdefghijkl", 6)) == 6
+          assert truncate("abcdef", 3, suffix="") == "abc"
+  solution:
+    strings.py: |
+      """String helpers."""
+      import re
+
+
+      def slugify(text: str) -> str:
+          """Lowercase `text`, replace runs of non-alphanumeric characters with a single
+          hyphen, and strip leading/trailing hyphens. "Hello, World!" -> "hello-world"."""
+          return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+      def truncate(text: str, length: int, suffix: str = "...") -> str:
+          """Return `text` unchanged if it is at most `length` characters long.
+
+          Otherwise cut it so that the result, *including* `suffix`, is exactly `length`
+          characters. truncate("hello world", 8) -> "hello..."
+          """
+          if len(text) <= length:
+              return text
+          return text[: max(length - len(suffix), 0)] + suffix
+
+
+      def word_count(text: str) -> int:
+          """Number of whitespace-separated words in `text`."""
+          return len(text.split())
+  judge:
+    notes: The docstring is the spec. slugify and word_count must be untouched.
+
+- id: edit-06-median
+  mode: editing
+  source: hand-written
+  fixture: text_utils
+  prompt: >-
+    Add a median(values) function to mathx.py. It should return the middle value (the mean of the two middle
+    values when there is an even number of them) and raise ValueError for an empty list.
+  expect:
+    modified: ["mathx.py"]
+    unmodified: ["strings.py", "cli.py"]
+    preserved_symbols:
+      - {file: "mathx.py", names: [clamp, mean]}
+    exec:
+      - name: median is correct
+        snippet: |
+          from mathx import median
+          assert median([3, 1, 2]) == 2
+          assert median([4, 1, 3, 2]) == 2.5
+          assert median([5]) == 5
+          try:
+              median([])
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("expected ValueError")
+  solution:
+    mathx.py: |
+      """Small numeric helpers."""
+
+
+      def clamp(x: float, lo: float, hi: float) -> float:
+          """Limit `x` to the inclusive range [lo, hi]."""
+          return max(lo, min(x, hi))
+
+
+      def mean(values: list[float]) -> float:
+          """Arithmetic mean of `values`. Raises ValueError for an empty list."""
+          if not values:
+              raise ValueError("mean() of empty list")
+          return sum(values) / len(values)
+
+
+      def median(values: list[float]) -> float:
+          """Middle value of `values`; the mean of the two middle values for an even count."""
+          if not values:
+              raise ValueError("median() of empty list")
+          ordered = sorted(values)
+          mid = len(ordered) // 2
+          return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+  judge:
+    notes: The input list must not be mutated.
+
+- id: edit-07-counter-reset
+  mode: editing
+  source: hand-written
+  fixture: counter_site
+  prompt: Add a Reset button that sets the counter back to 0 and saves the change.
+  expect:
+    modified: ["index.html", "app.js"]
+    contains:
+      - {file: "index.html", any: ["reset"]}
+      - {file: "app.js", any: ["reset"]}
+    preserved_symbols:
+      - {file: "app.js", names: [render, save]}
+  solution:
+    index.html: |
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Click Counter</title>
+        <link rel="stylesheet" href="style.css">
+      </head>
+      <body>
+        <main>
+          <h1>Click Counter</h1>
+          <p>Count: <span id="count">0</span></p>
+          <button id="increment">Increment</button>
+          <button id="reset">Reset</button>
+        </main>
+        <script src="app.js"></script>
+      </body>
+      </html>
+    app.js: |
+      const countEl = document.getElementById('count');
+      const incrementBtn = document.getElementById('increment');
+      const resetBtn = document.getElementById('reset');
+
+      let count = Number(localStorage.getItem('count') || 0);
+
+      function render() {
+        countEl.textContent = count;
+      }
+
+      function save() {
+        localStorage.setItem('count', String(count));
+      }
+
+      incrementBtn.addEventListener('click', () => {
+        count += 1;
+        save();
+        render();
+      });
+
+      resetBtn.addEventListener('click', () => {
+        count = 0;
+        save();
+        render();
+      });
+
+      render();
+  judge:
+    notes: The button must exist in the HTML and be wired in the JS, and reset must persist (so it survives a reload).
+
+- id: edit-09-todo-auth
+  mode: editing
+  source: seeded-verbatim
+  fixture: todo_api
+  prompt: Add user authentication to the application
+  expect:
+    modified: ["main.py"]
+    declared_dependencies: true
+    contains:
+      - {any: ["login", "token", "password", "authenticate"]}
+    preserved_symbols:
+      - {file: "main.py", names: [list_todos, create_todo, complete_todo]}
+      - {file: "storage.py", names: [load_todos, save_todos, add_todo, mark_done]}
+  judge:
+    notes: >-
+      Deliberately vague (it is a real prompt from the project docs). A good answer adds registration or login with
+      hashed passwords and protects the todo routes, and declares any new dependency in requirements.txt. It must not
+      break the existing endpoints' behaviour for an authenticated user.

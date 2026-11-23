@@ -1,0 +1,76 @@
+# Question-answering cases: a question about a fixture repo that is indexed into Qdrant first.
+#
+# expect.sources   the file(s) that actually hold the answer (drives the retrieval metrics: hit@k, recall, MRR)
+# expect.answer_contains   list of groups; every group needs at least one of its alternatives (case-insensitive)
+# expect.unanswerable      the code cannot answer this; the reply must say so instead of inventing something
+# reference        what a correct, grounded answer says. Shown to the LLM judge; never to the agent.
+
+- id: qa-01-todo-storage
+  mode: question_answering
+  source: hand-written
+  fixture: todo_api
+  prompt: Where are todos persisted and in what format?
+  reference: >-
+    Todos are stored in a local JSON file named todos.json (the DATA_FILE constant in storage.py), read with
+    json.load and written with json.dump. There is no database.
+  expect:
+    sources: ["storage.py"]
+    answer_contains: [["json"], ["todos.json", "DATA_FILE"]]
+    answer_not_contains: ["sqlalchemy", "mongodb", "postgres"]
+
+- id: qa-03-todo-auth-unanswerable
+  mode: question_answering
+  source: hand-written
+  fixture: todo_api
+  prompt: How does the API authenticate users?
+  reference: >-
+    It does not. There is no authentication anywhere in the code - the README says so explicitly - so any client
+    can call every endpoint.
+  expect:
+    sources: ["README.md", "main.py"]
+    unanswerable: true
+  judge:
+    notes: >-
+      Hallucination probe. A faithful answer says there is no authentication. Inventing a mechanism (JWT, API keys,
+      sessions, OAuth) is a failure.
+
+- id: qa-04-todo-missing-id
+  mode: question_answering
+  source: hand-written
+  fixture: todo_api
+  prompt: What happens when I call PUT /todos/99/done and no todo has id 99?
+  reference: >-
+    storage.mark_done returns None when no todo has that id, and the route in main.py turns that into an
+    HTTPException with status 404 and the detail "Todo not found".
+  expect:
+    sources: ["main.py", "storage.py"]
+    answer_contains: [["404"], ["not found"]]
+
+- id: qa-05-todo-get-before-create
+  mode: question_answering
+  source: hand-written
+  fixture: todo_api
+  prompt: What happens if I call GET /todos before any todo has ever been created?
+  reference: >-
+    load_todos opens todos.json without checking that it exists, so a fresh install raises FileNotFoundError, which
+    nothing catches - the request fails with a 500. (add_todo guards against the missing file; load_todos does not.)
+  expect:
+    sources: ["storage.py", "main.py"]
+    answer_contains: [["filenotfound", "does not exist", "doesn't exist", "missing", "not found", "error", "exception", "500", "crash"]]
+  judge:
+    notes: Needs reasoning across two files. Answering "it returns an empty list" is wrong.
+
+- id: qa-11-counter-about-short
+  mode: question_answering
+  source: seeded-verbatim
+  fixture: counter_site
+  prompt: what is this project about answer in short
+  reference: >-
+    A tiny click-counter web page: a button increments a count shown on the page, and the count is remembered in
+    localStorage.
+  expect:
+    sources: ["index.html", "app.js"]
+    answer_contains: [["counter", "count"]]
+    max_words: 80
+  judge:
+    notes: The user asked for a SHORT answer, so a multi-paragraph reply fails instruction-following.

@@ -1,0 +1,181 @@
+# Project-generation cases: prompt in, a new project out (planner -> architect -> coder -> integrator).
+#
+# source: seeded-verbatim  a prompt the repo owner actually typed or documented
+#         seeded-inferred  a topic reconstructed from artifacts of the owner's real dev runs (NOT verbatim)
+#         hand-written     authored for this suite
+#
+# Checks that always run (and are skipped when they don't apply): python/json/js syntax, project-local
+# imports resolve, html script/link targets exist, js element ids exist in the html, no TODO/FIXME stubs.
+# `expect` adds case-specific ones; see evals/evaluators/evaluate.py for the keys.
+# `exec` checks run the output (only with --exec) and, when a `solution` is given, are proven satisfiable by it.
+
+- id: gen-01-todo-web
+  mode: generation
+  source: seeded-verbatim
+  prompt: Create a simple to-do list web application using HTML, CSS, and JavaScript
+  expect:
+    files_exist: ["*.html", "*.css", "*.js"]
+    contains:
+      - {file: "*.js", any: ["addEventListener", "onclick"]}
+      - {file: "*.html", any: ["<button", "<input"]}
+  judge:
+    notes: The user must be able to add tasks, mark them complete and delete them.
+
+- id: gen-03-blog-api
+  mode: generation
+  source: seeded-inferred
+  prompt: >-
+    Build a blog REST API using FastAPI and SQLite. Posts have a title, a body and a created time, and the API
+    supports creating, listing, fetching, updating and deleting posts.
+  expect:
+    files_exist: ["requirements.txt", "*.py"]
+    declared_dependencies: true
+    contains:
+      - {file: "*.py", any: ["fastapi"]}
+      - {file: "*.py", any: ["sqlite"]}
+      - {file: "*.py", regex: '@\w+\.delete'}
+      - {file: "*.py", regex: '@\w+\.(put|patch)'}
+  judge:
+    notes: Every one of the five operations must be implemented and wired to SQLite, not stubbed or kept in memory.
+
+- id: gen-04-wordfreq
+  mode: generation
+  source: hand-written
+  prompt: >-
+    Write a Python command line script called wordfreq.py. It takes a text file path as its only argument and
+    prints the 10 most common words (lowercased, punctuation ignored), one per line, as "word count".
+  expect:
+    files_exist: ["wordfreq.py"]
+    exec:
+      - name: prints the most common words with their counts
+        setup_files:
+          sample.txt: "the cat and the dog and the bird. The end!"
+        snippet: |
+          import re, subprocess, sys
+          out = subprocess.run([sys.executable, "wordfreq.py", "sample.txt"], capture_output=True, text=True, timeout=10).stdout
+          counts = {m.group(1): int(m.group(2)) for m in (re.match(r"\W*(\w+)\W+(\d+)", l) for l in out.splitlines()) if m}
+          assert counts.get("the") == 4 and counts.get("and") == 2, out
+          assert len(counts) <= 10, out
+  solution:
+    wordfreq.py: |
+      import re
+      import sys
+      from collections import Counter
+
+      def main():
+          with open(sys.argv[1], encoding="utf-8") as f:
+              words = re.findall(r"[a-z0-9']+", f.read().lower())
+          for word, count in Counter(words).most_common(10):
+              print(f"{word} {count}")
+
+      if __name__ == "__main__":
+          main()
+
+- id: gen-05-bank-account
+  mode: generation
+  source: hand-written
+  prompt: >-
+    Create bank.py with a BankAccount class. It starts with a balance of 0 and has deposit(amount) and
+    withdraw(amount) methods and a balance property. withdraw must raise ValueError if the amount is more than
+    the balance, and both methods must raise ValueError for amounts that are not positive. Also write
+    test_bank.py with pytest tests for it.
+  expect:
+    files_exist: ["bank.py", "test_bank.py"]
+    defines:
+      - {file: "bank.py", names: ["BankAccount"]}
+    exec:
+      - name: BankAccount behaves as specified
+        snippet: |
+          from bank import BankAccount
+          a = BankAccount()
+          assert a.balance == 0
+          a.deposit(50); assert a.balance == 50
+          a.withdraw(20); assert a.balance == 30
+          for bad in (lambda: a.withdraw(100), lambda: a.deposit(0), lambda: a.deposit(-5), lambda: a.withdraw(-1)):
+              try:
+                  bad()
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError("expected ValueError")
+      - name: its own tests pass
+        cmd: ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+        stdout_contains: ["passed"]
+        timeout: 60
+  solution:
+    bank.py: |
+      class BankAccount:
+          def __init__(self):
+              self._balance = 0
+
+          @property
+          def balance(self):
+              return self._balance
+
+          def deposit(self, amount):
+              if amount <= 0:
+                  raise ValueError("amount must be positive")
+              self._balance += amount
+
+          def withdraw(self, amount):
+              if amount <= 0:
+                  raise ValueError("amount must be positive")
+              if amount > self._balance:
+                  raise ValueError("insufficient funds")
+              self._balance -= amount
+    test_bank.py: |
+      import pytest
+      from bank import BankAccount
+
+      def test_starts_at_zero():
+          assert BankAccount().balance == 0
+
+      def test_deposit_and_withdraw():
+          a = BankAccount()
+          a.deposit(10)
+          a.withdraw(4)
+          assert a.balance == 6
+
+      def test_overdraft_raises():
+          with pytest.raises(ValueError):
+              BankAccount().withdraw(1)
+
+      @pytest.mark.parametrize("amount", [0, -5])
+      def test_deposit_rejects_non_positive_amounts(amount):
+          with pytest.raises(ValueError):
+              BankAccount().deposit(amount)
+
+      @pytest.mark.parametrize("amount", [0, -5])
+      def test_withdraw_rejects_non_positive_amounts(amount):
+          a = BankAccount()
+          a.deposit(10)
+          with pytest.raises(ValueError):
+              a.withdraw(amount)
+  judge:
+    notes: The tests must genuinely exercise deposit, withdraw and the error cases, not just import the class.
+
+- id: gen-07-csv-to-json
+  mode: generation
+  source: hand-written
+  prompt: >-
+    Write a Python script csv2json.py that reads the CSV file given as its first argument (columns: name,score)
+    and prints a JSON array of objects where "name" is a string and "score" is an integer.
+  expect:
+    files_exist: ["csv2json.py"]
+    exec:
+      - name: converts rows with the right types
+        setup_files:
+          data.csv: "name,score\nada,90\nbob,75\n"
+        snippet: |
+          import json, subprocess, sys
+          out = subprocess.run([sys.executable, "csv2json.py", "data.csv"], capture_output=True, text=True, timeout=10).stdout
+          assert json.loads(out) == [{"name": "ada", "score": 90}, {"name": "bob", "score": 75}], out
+  solution:
+    csv2json.py: |
+      import csv
+      import json
+      import sys
+
+      with open(sys.argv[1], newline="", encoding="utf-8") as f:
+          rows = [{"name": r["name"], "score": int(r["score"])} for r in csv.DictReader(f)]
+      print(json.dumps(rows))
