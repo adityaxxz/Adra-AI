@@ -58,11 +58,12 @@ class CodeAwareChunker:
             # Prepend so it's retrieved first
             chunks = [whole_chunk] + chunks
 
-        # Deduplicate by chunk_id while preserving order
+        # Deduplicate by chunk_id while preserving order. Blank chunks (an empty __init__.py) are dropped: the
+        # embeddings API rejects empty text, which used to make indexing the whole repository fail.
         seen: Set[str] = set()
         unique_chunks = []
         for chunk in chunks:
-            if chunk.chunk_id not in seen:
+            if chunk.chunk_id not in seen and chunk.content.strip():
                 seen.add(chunk.chunk_id)
                 unique_chunks.append(chunk)
 

@@ -4,6 +4,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
 load_dotenv()
 
+from agent.rate_limit import call_with_rate_limit_backoff
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +55,10 @@ patch_google_genai_retries()
 
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001",)
 
+# Indexing embeds one chunk per call, so a repo of ~100+ chunks exceeds the free tier's 100 calls/minute.
+EMBED_RATE_LIMIT_RETRIES = int(os.getenv("EMBED_RATE_LIMIT_RETRIES", "5"))
+EMBED_RATE_LIMIT_MAX_WAIT_SEC = float(os.getenv("EMBED_RATE_LIMIT_MAX_WAIT_SEC", "60"))
+
 
 def _is_rate_limit_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
@@ -73,7 +79,10 @@ def embed_text(text: str, *, task_type: str) -> list[float]:
     every call site has to make this choice explicitly.
     """
     try:
-        return embeddings.embed_query(text, task_type=task_type)
+        return call_with_rate_limit_backoff(
+            lambda: embeddings.embed_query(text, task_type=task_type),
+            retries=EMBED_RATE_LIMIT_RETRIES, max_wait=EMBED_RATE_LIMIT_MAX_WAIT_SEC, label="embeddings",
+        )
     except Exception as e:
         if _is_rate_limit_error(e):
             logger.error(f"Google GenAI Embeddings Rate Limit / Resource Exhausted (429) hit: {e}")

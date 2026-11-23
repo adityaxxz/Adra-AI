@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.observability import record_call, record_retry, get_current_run, get_langfuse_handler
-from agent.rate_limit import classify_rate_limit
+from agent.rate_limit import call_with_rate_limit_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -123,34 +123,13 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     )
 
 
-def _rate_limit_wait(exc: BaseException, retry_number: int) -> Optional[float]:
-    """Seconds to wait before retrying after a rate limit, or None when waiting can't help
-    (a daily quota, or a provider hint longer than RATE_LIMIT_MAX_WAIT_SEC)."""
-    kind, hint = classify_rate_limit(exc)
-    if kind == "daily" or hint > RATE_LIMIT_MAX_WAIT_SEC:
-        return None
-    # Providers say when the window frees up ("try again in 3.98s"); without a hint back off 5s, 10s, 20s...
-    return hint + 1.0 if hint else min(5.0 * 2 ** retry_number, RATE_LIMIT_MAX_WAIT_SEC)
-
-
 def _with_rate_limit_backoff(call, agent: Optional[str] = None):
-    """Run `call()`; on a rate limit wait the provider's suggested time and run it again, up to
-    RATE_LIMIT_RETRIES times. Without this a Groq tokens-per-minute 429 that clears in 4 seconds
-    failed the whole generation. Waits happen in the background-task thread, not the HTTP request."""
-    retries = 0
-    while True:
-        try:
-            return call()
-        except Exception as e:
-            if not _is_rate_limit_error(e) or retries >= RATE_LIMIT_RETRIES:
-                raise
-            wait = _rate_limit_wait(e, retries)
-            if wait is None:
-                raise
-            retries += 1
-            logger.warning(f"{LLM_PROVIDER.upper()} rate limit hit ({agent or 'llm'}); waiting {wait:.1f}s "
-                           f"before retry {retries}/{RATE_LIMIT_RETRIES}: {str(e)[:160]}")
-            time.sleep(wait)
+    """Run `call()`, waiting out provider rate limits (see `agent.rate_limit`). Without this a Groq
+    tokens-per-minute 429 that clears in 4 seconds failed the whole generation. Waits happen in the
+    background-task thread, not the HTTP request."""
+    return call_with_rate_limit_backoff(
+        call, retries=RATE_LIMIT_RETRIES, max_wait=RATE_LIMIT_MAX_WAIT_SEC, label=f"{LLM_PROVIDER.upper()} {agent or 'llm'}"
+    )
 
 
 def _throttle(extra_wait: float = 0.0) -> None:
