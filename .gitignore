@@ -139,6 +139,7 @@ coverage/
 coverage.xml
 
 interview_ques.md
+latest.dump
 
 # --- Eval harness ---
 # run reports; and exported candidates, which contain real user prompts

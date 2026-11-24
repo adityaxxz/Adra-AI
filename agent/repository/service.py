@@ -190,6 +190,16 @@ def search_repository(query: str, k: int = 5, collection_name: str = None):
     return retrieve(query=query, k=k, collection_name=collection_name)
 
 
+def clone_dir_for(repo_name: str, github_url: str) -> str:
+    """Folder under temp_repos to clone into: the user's repository name, so
+    re-cloning the same GitHub repo under a new name doesn't hit an existing
+    folder. Falls back to the URL's repo name if the name has nothing usable."""
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", repo_name or "").strip(" .")
+    if not safe:
+        safe = github_url.rstrip("/").split("/")[-1].replace(".git", "")
+    return f"./temp_repos/{safe}"
+
+
 def clone_github_repo(github_url: str, target_dir: str = None) -> str:
     """
     Clone a public GitHub repository to a local directory.

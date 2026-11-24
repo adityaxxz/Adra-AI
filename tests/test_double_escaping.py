@@ -121,3 +121,34 @@ def test_the_integrator_can_also_return_a_double_escaped_file(project, monkeypat
     monkeypatch.setattr(G, "structured_invoke", _generation_llm("x = 1\n", updates))
     G.project_generation_agent.invoke({"user_prompt": "blog", "session_id": "s"}, {"recursion_limit": 30})
     ast.parse((project / "app" / "schemas.py").read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------- quotes escaped in an otherwise normal file
+
+HTML_BEFORE = '<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>Hi</title>\n</head>\n</html>\n'
+HTML_ESCAPED = '<!-- page -->\n<html lang=\\"en\\">\n<head>\n<meta charset=\\"UTF-8\\">\n<title>Hi</title>\n</head>\n</html>\n'
+HTML_FIXED = HTML_ESCAPED.replace('\\"', '"')
+
+
+def test_quotes_the_model_backslash_escaped_in_an_html_file_are_unescaped():
+    # Seen live: a one-line edit came back with lang=\"en\" on every line, corrupting the whole page.
+    assert G._fix_escaped_quotes(HTML_ESCAPED, "index.html", HTML_BEFORE) == HTML_FIXED
+
+
+def test_escaped_quotes_are_left_alone_when_they_are_legitimate():
+    # valid JSON / Python whose strings really contain escaped quotes
+    assert G._fix_escaped_quotes('{"a": "say \\"hi\\""}', "a.json", '{"a": 1}') == '{"a": "say \\"hi\\""}'
+    py = "msg = 'say \\\"hi\\\"'\n"
+    assert G._fix_escaped_quotes(py, "a.py", 'msg = "x"\n') == py
+    # the file already used escaped quotes before the edit
+    js = "const s = 'a \\\"b\\\"';\n"
+    assert G._fix_escaped_quotes(js, "a.js", js) == js
+    # some quotes are plain, so this isn't the all-escaped failure
+    mixed = '<a href="x" title=\\"y\\">\n'
+    assert G._fix_escaped_quotes(mixed, "a.html", HTML_BEFORE) == mixed
+
+
+def test_a_new_file_needs_more_evidence_before_its_quotes_are_touched():
+    assert G._fix_escaped_quotes('<a href=\\"x\\">\n', "new.html", "") == '<a href=\\"x\\">\n'
+    many = '<a href=\\"1\\" title=\\"2\\">\n'
+    assert G._fix_escaped_quotes(many, "new.html", "") == '<a href="1" title="2">\n'

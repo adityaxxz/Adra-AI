@@ -17,6 +17,9 @@ from agent.repository.vector_store import set_active_collection
 from agent.llm_client import graph_run_config
 from agent.observability import start_run, get_current_run, record_agent_run
 from agent.logging_config import bind_run_context, clear_run_context
+from agent.tools import (
+    begin_original_capture, end_original_capture, restore_originals, set_project_root, init_project_root,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,22 @@ def _attach_run_metrics(exc: BaseException) -> None:
         exc.run_metrics = run.snapshot()
 
 
+def _only_changed(edited: Dict[str, str], originals: Dict[str, Optional[str]]) -> Dict[str, str]:
+    """Drop files the run rewrote to exactly what they already held: nothing to review there."""
+    return {p: c for p, c in edited.items() if p not in originals or originals[p] != c}
+
+
+def _editing_message(edited: list, plan_summary: Optional[str], skipped: list) -> str:
+    """The reply shown for an editing run: what changed, the planner's one-line summary
+    (which also carries anything it couldn't do), and files it declined to touch."""
+    parts = [f"✅ Done! Edited {len(edited)} file(s): {', '.join(edited)}" if edited else "No files were changed."]
+    if plan_summary:
+        parts.append(plan_summary)
+    if skipped:
+        parts.append(f"Skipped (binary or too large to edit safely): {', '.join(skipped)}")
+    return "\n\n".join(parts)
+
+
 class BackgroundTaskManager:
     """Manage background task execution for agents."""
     
@@ -81,10 +100,6 @@ class BackgroundTaskManager:
             # Step 1: Initialize
             await reporter.step("initialization", "...")
             
-            # Import and setup
-            from agent.tools import set_project_root, init_project_root
-            init_project_root()
-            
             # Step 2: Run agent
             await reporter.step("agent_execution", "...")
             await reporter.agent_update("project_generation_agent", "started")
@@ -97,7 +112,8 @@ class BackgroundTaskManager:
                 user_prompt,
                 recursion_limit,
                 reporter,
-                session_id
+                session_id,
+                project_root
             )
             metrics = result.pop("_metrics", None)
             if metrics:
@@ -147,13 +163,19 @@ class BackgroundTaskManager:
         user_prompt: str,
         recursion_limit: int,
         reporter: ProgressReporter,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        project_root: Optional[str] = None
     ) -> Dict:
         """Synchronous wrapper for project generation agent. Runs in a worker
         thread, so the run-correlation context and LLM run metrics are bound
-        here (contextvars don't cross the async->executor thread boundary)."""
+        here (contextvars don't cross the async->executor thread boundary).
+        The project root is per-run for the same reason: set here, never by the
+        request handler, so another request can't repoint a run that's writing."""
         bind_run_context(session_id=session_id, mode="generation")
         start_run(session_id=session_id)
+        if project_root:
+            set_project_root(project_root)
+            init_project_root()
         try:
             agent = project_generation_agent
             initial_state = {"user_prompt": user_prompt, "session_id": session_id}
@@ -170,6 +192,7 @@ class BackgroundTaskManager:
             _attach_run_metrics(e)
             raise
         finally:
+            set_project_root(None)  # pool threads are reused; don't leak this run's root into the next
             clear_run_context()
     
     async def execute_repository_editing(
@@ -190,8 +213,6 @@ class BackgroundTaskManager:
             
             # Step 1: Setup
             await reporter.step("setup", "Setting up repository context...")
-            from agent.tools import set_project_root
-            set_project_root(repo_path)
             set_active_collection(collection_name)
             
             # Step 2: Index if needed
@@ -218,7 +239,10 @@ class BackgroundTaskManager:
 
             # Step 4: Collect edited files from disk using coder_state step filepaths
             await reporter.step("collecting_changes", "Collecting edited files...")
-            edited_files = self._collect_edited_files(result, repo_path)
+            # Pre-edit content of those files, so the UI can show a diff and revert a rejected one.
+            captured = result.pop("_original_files", {})
+            edited_files = _only_changed(self._collect_edited_files(result, repo_path), captured)
+            original_files = {p: captured[p] for p in edited_files if p in captured}
 
             # Step 5: Complete — broadcast edited files to frontend
             await reporter.step("complete", f"Editing complete. Modified {len(edited_files)} file(s).")
@@ -226,9 +250,13 @@ class BackgroundTaskManager:
 
             # Broadcast completion with edited files so frontend can display them
             edited_file_names = list(edited_files.keys())
-            summary = f"✅ Done! Edited {len(edited_files)} file(s): {', '.join(edited_file_names)}" if edited_files else "✅ Editing complete."
+            task_plan = getattr(result.get("coder_state"), "task_plan", None)
+            summary = _editing_message(
+                edited_file_names, getattr(task_plan, "edit_summary", None), result.get("skipped_files") or []
+            )
             await reporter.complete({
                 "edited_files": edited_files,
+                "original_files": original_files,
                 "message": summary,
                 "files_changed": edited_file_names
             })
@@ -237,7 +265,9 @@ class BackgroundTaskManager:
             return {
                 "success": True,
                 "result": _serializable_result(result),
+                "message": summary,
                 "edited_files": edited_files,
+                "original_files": original_files,
                 "files_changed": edited_file_names,
                 "metrics": metrics,
                 "task_id": task_id
@@ -267,6 +297,8 @@ class BackgroundTaskManager:
         happens here rather than in the async caller."""
         bind_run_context(session_id=session_id, mode="editing")
         start_run(session_id=session_id)
+        set_project_root(repo_path)   # per-run; see _run_project_generation_agent
+        begin_original_capture()
         try:
             agent = repository_editing_agent
             initial_state = {
@@ -282,12 +314,21 @@ class BackgroundTaskManager:
             )
             run = get_current_run()
             result["_metrics"] = run.snapshot() if run else None
+            result["_original_files"] = end_original_capture()
             return result
         except Exception as e:
             logger.error(f"Error in repository editing agent: {e}", exc_info=True)
             _attach_run_metrics(e)
+            # A run that dies part-way would otherwise leave some files edited with no
+            # review UI and no way to tell. Put the repo back as it was.
+            try:
+                restore_originals()
+            except Exception:
+                logger.error("Could not roll back a failed editing run", exc_info=True)
             raise
         finally:
+            end_original_capture()  # no-op if already ended; stops capture on failure
+            set_project_root(None)
             clear_run_context()
     
     async def execute_question_answering(
@@ -308,7 +349,6 @@ class BackgroundTaskManager:
             
             # Step 1: Setup
             await reporter.step("setup", "...")
-            from agent.tools import set_project_root
 
             # Question answering only reads from the Qdrant collection
             # (repository_agent -> explainer_agent never touch the filesystem),
@@ -318,7 +358,6 @@ class BackgroundTaskManager:
             # repo_path here would break Q&A for previously-indexed repos for
             # no reason. set_project_root is still called for consistency with
             # the other modes, but nothing in this graph depends on it existing.
-            set_project_root(repo_path)
             set_active_collection(collection_name)
             logger.info(f"Question answering setup complete for: {repo_path}")
 
@@ -391,6 +430,7 @@ class BackgroundTaskManager:
         happens here rather than in the async caller."""
         bind_run_context(session_id=session_id, mode="qa")
         start_run(session_id=session_id)
+        set_project_root(repo_path)
         try:
             agent = question_answering_agent
             initial_state = {
@@ -412,6 +452,7 @@ class BackgroundTaskManager:
             _attach_run_metrics(e)
             raise
         finally:
+            set_project_root(None)
             clear_run_context()
     
     async def index_repository_task(

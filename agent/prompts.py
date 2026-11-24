@@ -26,12 +26,18 @@ def edit_planner_prompt(user_prompt: str, retrieved_context: str, repo_files: st
         RULES:
         - Prefer modifying existing files over creating new ones. Add a file only when
           the request genuinely cannot be satisfied by editing what is already there.
-        - Every filepath must either appear in the file list above, or be a new file you
-          are deliberately choosing to create. Never guess at a path that isn't listed.
+        - Every filepath must appear in the file list above, unless the user explicitly
+          asked for a new file to be created. If the request names a file that is not
+          listed but is clearly a misspelling of exactly one listed file (e.g. `style.cc`
+          for `style.css`), edit the listed file. Never invent or guess a path.
         - Exactly one entry per file — never split one file across multiple entries.
         - Order entries by dependency: shared/foundational files before their consumers.
         - In each change_description, state precisely what to add, modify or remove and
           name the concrete symbols involved (functions, classes, routes, config keys).
+        - If the request does not ask for any change to the repository (for example it is
+          a question), return an EMPTY edits list and say so in the summary.
+        - You can only modify or create files. You cannot delete, rename or move a file.
+          Plan the edits you can make, and state in the summary what you could not do.
         - Do NOT restructure the project, rename existing modules, reformat code, or
           touch anything unrelated to the request.
         - Keep the plan minimal. Do not invent features the user did not ask for.
@@ -65,7 +71,12 @@ def architect_prompt(plan: str) -> str:
 
 
 def coder_prompt( filepath: str, task_description: str, existing_content: str, project_context: str, plan_summary: str, repository_context: str = "", ) -> str:
-    empty_note = "File is empty or new — implement from scratch." if not existing_content.strip() else ""
+    empty_note = (
+        "File is empty or new — implement from scratch."
+        if not existing_content.strip()
+        else "This file already exists. Change ONLY what the Task requires and keep every other line "
+             "exactly as it is (same formatting, comments and ordering). Never drop existing code."
+    )
     repo_section = f"""
         
         REPOSITORY CONTEXT (relevant code from existing codebase):

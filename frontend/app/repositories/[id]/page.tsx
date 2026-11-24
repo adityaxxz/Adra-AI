@@ -3,11 +3,13 @@
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { repositoriesAPI, generationAPI, projectsAPI, feedbackAPI } from '../../../api-client';
+import { repositoriesAPI, generationAPI, projectsAPI, feedbackAPI, editsAPI } from '../../../api-client';
+import { saveBlob, zipName } from '../../../lib/downloadBlob';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 import { Sidebar } from '../../../components/Sidebar';
 import { ChatMessage, TypingIndicator } from '../../../components/ChatMessage';
+import type { ResolveDecision } from '../../../components/EditedFilesReview';
 import {
   getChatSession,
   saveChatSession,
@@ -87,6 +89,7 @@ function RepositoryPageInner() {
   const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showDirectory, setShowDirectory] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
@@ -162,8 +165,10 @@ function RepositoryPageInner() {
     // Indexing messages
     if (['scanning','chunking','embedding','indexing'].includes(latestMessage.step ?? '')) return;
     if (latestMessage.step === 'complete' && isIndexing) {
-      setIsIndexing(false);
-      loadRepository();
+      // The WS `complete` frame is sent before the backend commits is_indexed,
+      // so a single refetch here can read the stale flag. Keep isIndexing on
+      // (the banner stays in its progress state) until the flag flips.
+      waitForIndexed();
       return;
     }
     if (latestMessage.type === 'error' && isIndexing) {
@@ -187,7 +192,7 @@ function RepositoryPageInner() {
         const result = latestMessage.result || {};
         const editedFiles: Record<string, string> = result.edited_files || {};
         const message = result.message || latestMessage.message || 'Editing complete.';
-        addAssistantMessage(message, editedFiles, sessionId ?? undefined);
+        addAssistantMessage(message, editedFiles, sessionId ?? undefined, result.original_files);
         if (Object.keys(editedFiles).length > 0) {
           setRepository(prev => prev ? { ...prev, files: { ...(prev.files || {}), ...editedFiles } } : prev);
           setTimeout(() => loadRepository(), 1500);
@@ -217,7 +222,7 @@ function RepositoryPageInner() {
       );
     } else {
       const editedFiles: Record<string, string> = result.edited_files || {};
-      addAssistantMessage(result.message || 'Editing complete.', editedFiles, sessionId ?? undefined);
+      addAssistantMessage(result.message || 'Editing complete.', editedFiles, sessionId ?? undefined, result.original_files);
       if (Object.keys(editedFiles).length > 0) {
         setRepository(prev =>
           prev ? { ...prev, files: { ...(prev.files || {}), ...editedFiles } } : prev
@@ -244,23 +249,36 @@ function RepositoryPageInner() {
     let attempts = 0;
     let timer: ReturnType<typeof setInterval> | null = null;
     const MAX_ATTEMPTS = 100; // ~5 minutes at 3s
+    // `check` is async, and a slow or restarting server leaves several requests in
+    // flight at once. Without these guards each one that comes back finished applies
+    // the result, posting the same reply repeatedly - and one that outlives this effect
+    // (the socket delivered the result first) posts a duplicate too.
+    let done = false;
+    let inFlight = false;
     const stop = () => {
       if (timer) { clearInterval(timer); timer = null; }
     };
 
     const check = async () => {
+      if (done || inFlight) return;
+      inFlight = true;
       attempts += 1;
       try {
         const session = await generationAPI.getSession(sessionId);
+        if (done) return;
         if (session && session.is_active === false) {
+          done = true;
           stop();
           applySessionOutcome(session.result);
           return;
         }
       } catch {
         // Server may be mid-restart; keep trying until the attempt cap.
+      } finally {
+        inFlight = false;
       }
-      if (attempts >= MAX_ATTEMPTS) {
+      if (!done && attempts >= MAX_ATTEMPTS) {
+        done = true;
         stop();
         addAssistantMessage(
           'Lost connection to the server and the run is still not finished. It may still be processing — reload the page to check.'
@@ -270,7 +288,7 @@ function RepositoryPageInner() {
 
     timer = setInterval(check, 3000);
     check();
-    return stop;
+    return () => { done = true; stop(); };
   }, [isConnected, isProcessing, sessionId, mode]);
 
   // Same reasoning as the chat recovery above, for indexing. Indexing has no
@@ -318,10 +336,21 @@ function RepositoryPageInner() {
     return stop;
   }, [isConnected, isIndexing, sessionId, repositoryId]);
 
-  // Scroll to bottom on new messages
+  // Keep the latest message in view. Runs again once loading finishes, because the chat
+  // (and so chatEndRef) doesn't exist while the loading screen is up; without that,
+  // opening a repo showed the oldest message. Jump instantly on first show or a switch to
+  // another chat (animating across a long history is slow); animate only for new messages.
+  const lastScrolledSession = useRef<string | null>(null);
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentSession.messages, isProcessing]);
+    if (loading) return;
+    const jump = lastScrolledSession.current !== currentSession.id;
+    lastScrolledSession.current = currentSession.id;
+    chatEndRef.current?.scrollIntoView({ behavior: jump ? 'auto' : 'smooth' });
+    if (!jump) return;
+    // Diffs mount asynchronously (Monaco) and grow the page after the first jump; land again once they have.
+    const t = setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 600);
+    return () => clearTimeout(t);
+  }, [currentSession.id, currentSession.messages, isProcessing, loading]);
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -343,6 +372,20 @@ function RepositoryPageInner() {
     }
   };
 
+  const waitForIndexed = async () => {
+    for (let i = 0; i < 30; i++) {
+      try {
+        const data = await repositoriesAPI.getRepository(repositoryId);
+        setRepository(data);
+        if (data?.is_indexed) break;
+      } catch {
+        // Transient; retry until the cap.
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    setIsIndexing(false);
+  };
+
   const loadSidebarData = async () => {
     try {
       const [p, r] = await Promise.all([
@@ -356,8 +399,13 @@ function RepositoryPageInner() {
 
   // ---- Session helpers ----
   // `runSessionId` is the backend session that produced the reply; only replies from a real run get rating buttons.
-  const addAssistantMessage = (content: string, editedFiles?: Record<string, string>, runSessionId?: string) => {
-    const msg: ChatMessageType = { role: 'assistant', content, editedFiles, runSessionId };
+  const addAssistantMessage = (
+    content: string,
+    editedFiles?: Record<string, string>,
+    runSessionId?: string,
+    originalFiles?: Record<string, string | null>
+  ) => {
+    const msg: ChatMessageType = { role: 'assistant', content, editedFiles, runSessionId, originalFiles };
     setCurrentSession(prev => {
       const updated = appendMessage(prev, msg);
       saveChatSession(repositoryId, updated);
@@ -375,6 +423,30 @@ function RepositoryPageInner() {
       saveChatSession(repositoryId, updated);
       return updated;
     });
+  };
+
+  // Accept/reject the files one reply edited. Returns the paths the server left alone
+  // because they changed since that run. Throws if the decision couldn't be saved.
+  const handleResolveEdits = async (idx: number, decision: ResolveDecision): Promise<string[]> => {
+    const runSessionId = currentSession.messages[idx]?.runSessionId;
+    if (!runSessionId) throw new Error('This reply has no run to resolve');
+    const { review, conflicts } = await editsAPI.resolve(repositoryId, runSessionId, decision);
+    // A hand-edited file is saved as you edited it; keep the card showing that, not the agent's version.
+    const saved = Object.fromEntries(
+      Object.entries(decision.edited).filter(([p]) => review[p] === 'accepted' && !conflicts.includes(p))
+    );
+    setCurrentSession(prev => {
+      const updated = {
+        ...prev,
+        messages: prev.messages.map((m, i) =>
+          i === idx ? { ...m, editReview: review, editedFiles: { ...m.editedFiles, ...saved } } : m
+        ),
+      };
+      saveChatSession(repositoryId, updated);
+      return updated;
+    });
+    loadRepository();   // a rejection changes the repo's files; refresh the file list/contents
+    return conflicts;
   };
 
   const addUserMessage = (content: string) => {
@@ -427,6 +499,20 @@ function RepositoryPageInner() {
     setDeleteConfirmOpen(true);
   };
 
+  const handleDownload = async () => {
+    if (!repository || downloading) return;
+    setDownloading(true);
+    try {
+      const blob = await repositoriesAPI.downloadRepository(repositoryId);
+      saveBlob(blob, zipName(repository.name));
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.response?.status === 413 ? 'This repository is too large to download as a ZIP.' : 'Failed to download repository.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const confirmDeleteAction = async () => {
     if (!repository || deleteConfirmName !== repository.name) return;
     try {
@@ -445,6 +531,14 @@ function RepositoryPageInner() {
     const userText = input.trim();
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    if (mode === 'editor') {
+      // The agent works from what's on disk, so edits still awaiting review count as accepted once you ask for more.
+      for (const [i, m] of currentSession.messages.entries()) {
+        const pending = Object.keys(m.originalFiles ?? {}).filter(f => (m.editReview?.[f] ?? 'pending') === 'pending');
+        if (pending.length) await handleResolveEdits(i, { accept: pending, reject: [], edited: {} }).catch(() => {});
+      }
+    }
 
     addUserMessage(userText);
     setIsProcessing(true);
@@ -566,6 +660,23 @@ function RepositoryPageInner() {
               </button>
             )}
 
+            {/* Download current files as a ZIP */}
+            {isReady && (
+              <button
+                onClick={handleDownload}
+                disabled={downloading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white disabled:opacity-60 disabled:cursor-wait"
+                title="Download the current project files as a ZIP"
+                id="download-repo-btn"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+                </svg>
+                {downloading ? 'Zipping…' : 'Download'}
+              </button>
+            )}
+
             {/* Delete */}
             <button
               onClick={handleDelete}
@@ -642,7 +753,7 @@ function RepositoryPageInner() {
                     d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
                 Project Files
-                <span className="badge badge-zinc">{repository.files_count}</span>
+                <span className="badge badge-zinc">{Object.keys(repository.files || {}).length}</span>
               </h3>
               <button onClick={() => setShowDirectory(false)} className="btn-ghost p-1 rounded" style={{ color: 'var(--text-muted)' }}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -734,6 +845,7 @@ function RepositoryPageInner() {
                     setSelectedFile(filePath);
                     setSelectedFileContent(content);
                   }}
+                  onResolveEdits={decision => handleResolveEdits(idx, decision)}
                   animate={idx === currentSession.messages.length - 1}
                   userName={user?.name}
                   onRate={rating => handleRate(idx, rating)}

@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import select, func, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_fastapi_instrumentator import Instrumentator
-from typing import Optional, List, Literal
+from typing import Optional, List, Dict, Literal
 from pydantic import BaseModel, ValidationError, Field
 import os
 import uuid
@@ -38,6 +38,7 @@ from backend.websocket_manager import manager, ProgressReporter
 from backend.background_tasks import task_manager
 from backend.run_store import record_agent_run
 from backend.feedback_store import save_feedback
+from backend.edit_review import apply_review
 from agent.llm_client import LLM_PROVIDER, MODEL_NAME
 from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
 from backend.error_handlers import (
@@ -52,7 +53,6 @@ from backend.error_handlers import (
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from agent.tools import set_project_root
 
 
 # Database configuration
@@ -227,6 +227,13 @@ class FeedbackRequest(BaseModel):
     session_id: str
     rating: Literal["up", "down"]
     comment: Optional[str] = Field(default=None, max_length=2000)
+
+
+class EditReviewRequest(BaseModel):
+    accept: List[str] = Field(default_factory=list)
+    reject: List[str] = Field(default_factory=list)
+    # Hand-edited content for accepted files, {path: text}; written over the agent's version.
+    edited: Dict[str, str] = Field(default_factory=dict)
 
 
 class GenerationRequest(BaseModel):
@@ -543,6 +550,8 @@ async def download_project(
     db: AsyncSession = Depends(get_db)
 ):
     """Download project files as a ZIP file."""
+    from backend.repo_zip import zip_filename
+
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -579,7 +588,7 @@ async def download_project(
         io.BytesIO(zip_buffer.getvalue()),
         media_type="application/zip",
         headers={
-            "Content-Disposition": f"attachment; filename={project.name}-project.zip"
+            "Content-Disposition": f'attachment; filename="{zip_filename(project.name + "-project")}"'
         }
     )
 
@@ -766,7 +775,21 @@ async def get_repository(
                         files[relative_path] = None
         except Exception as e:
             logger.error(f"Error reading repository files: {e}")
-    
+
+        # The walk above only lists indexable extensions, so a file the agent created or
+        # edited with another one (todo.txt, a .cc file) never showed up, though it's on
+        # disk. Those files are recorded in `repository.files`; list them too, from disk.
+        listed = {p.replace("\\", "/") for p in files}
+        for rel in repository.files or {}:
+            full = os.path.join(repository.local_path, rel)
+            if rel in listed or ".." in rel.split("/") or not os.path.isfile(full):
+                continue
+            try:
+                with open(full, "r", encoding="utf-8") as f:
+                    files[rel] = f.read()
+            except Exception:
+                files[rel] = None
+
     return {
         "id": repository.id,
         "name": repository.name,
@@ -782,6 +805,65 @@ async def get_repository(
         "last_indexed_at": repository.last_indexed_at.isoformat() if repository.last_indexed_at else None,
         "files": files
     }
+
+
+@app.get("/repositories/{repository_id}/download")
+async def download_repository(
+    repository_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Download the repository's current files (including edits not yet reviewed) as a ZIP.
+
+    Built on demand into a temp file and streamed, so nothing is stored anywhere.
+    """
+    from agent.repository.service import ensure_repo_on_disk
+    from backend.repo_zip import build_repo_zip, zip_filename, RepoZipEmpty, RepoZipTooLarge
+
+    result = await db.execute(
+        select(Repository).where(
+            Repository.id == repository_id,
+            Repository.user_id == current_user["sub"]
+        )
+    )
+    repository = result.scalar_one_or_none()
+    if not repository:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+
+    rehydrated_path = await asyncio.to_thread(
+        ensure_repo_on_disk, repository.local_path, repository.files, repository.id
+    )
+    if rehydrated_path != repository.local_path:
+        repository.local_path = rehydrated_path
+        await db.commit()
+    if not repository.local_path or not os.path.isdir(repository.local_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository has no files to download")
+
+    try:
+        zip_file, size = await asyncio.to_thread(build_repo_zip, repository.local_path)
+    except RepoZipEmpty:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository has no files to download")
+    except RepoZipTooLarge:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Repository is too large to download as a ZIP",
+        )
+
+    def stream():
+        try:
+            while chunk := zip_file.read(64 * 1024):
+                yield chunk
+        finally:
+            zip_file.close()
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_filename(repository.name)}"',
+            "Content-Length": str(size),
+        },
+    )
 
 
 async def _run_indexing_task(repository_id: str, session_id: str):
@@ -800,6 +882,7 @@ async def _run_indexing_task(repository_id: str, session_id: str):
         ensure_repo_on_disk,
         snapshot_repo_files,
         clone_github_repo,
+        clone_dir_for,
     )
     from agent.repository.vector_store import count_chunks
 
@@ -828,8 +911,7 @@ async def _run_indexing_task(repository_id: str, session_id: str):
             elif repository.url:
                 # Clone GitHub repositories to local path if needed
                 if repository.url.startswith('http'):
-                    repo_name = repository.url.split('/')[-1].replace('.git', '')
-                    local_repo_path = f"./temp_repos/{repo_name}"
+                    local_repo_path = clone_dir_for(repository.name, repository.url)
                     # Ensure temp_repos directory exists
                     os.makedirs("./temp_repos", exist_ok=True)
                     repo_path = await asyncio.to_thread(
@@ -1211,10 +1293,12 @@ async def start_generation(
     db.add(db_session)
     await db.commit()
 
-    # Determine project root for generation
+    # Where a generation run writes. Only generation needs the folder, and the root is
+    # set by the worker for its own run - setting it here repointed any run already
+    # writing in another thread.
     project_root = f"./generated_projects/{session_id}"
-    os.makedirs(project_root, exist_ok=True)
-    set_project_root(project_root)
+    if request.mode == SessionMode.GENERATION:
+        os.makedirs(project_root, exist_ok=True)
 
     repo_path = None
     collection_name = None
@@ -1262,9 +1346,8 @@ async def start_generation(
         elif repository.url:
             # Clone GitHub repositories to local path if needed
             if repository.url.startswith('http'):
-                from agent.repository.service import clone_github_repo
-                repo_name = repository.url.split('/')[-1].replace('.git', '')
-                local_repo_path = f"./temp_repos/{repo_name}"
+                from agent.repository.service import clone_github_repo, clone_dir_for
+                local_repo_path = clone_dir_for(repository.name, repository.url)
                 # Ensure temp_repos directory exists
                 os.makedirs("./temp_repos", exist_ok=True)
                 try:
@@ -1309,9 +1392,8 @@ async def start_generation(
         elif repository.url:
             # Clone GitHub repositories to local path if needed
             if repository.url.startswith('http'):
-                from agent.repository.service import clone_github_repo
-                repo_name = repository.url.split('/')[-1].replace('.git', '')
-                local_repo_path = f"./temp_repos/{repo_name}"
+                from agent.repository.service import clone_github_repo, clone_dir_for
+                local_repo_path = clone_dir_for(repository.name, repository.url)
                 try:
                     repo_path = clone_github_repo(repository.url, local_repo_path)
                 except Exception as e:
@@ -1426,6 +1508,55 @@ async def submit_feedback(
             detail="No finished run found for that session"
         )
     return {"run_id": feedback.run_id, "rating": feedback.rating}
+
+
+@app.post("/repositories/{repository_id}/edits/{session_id}/resolve")
+async def resolve_edits(
+    repository_id: str,
+    session_id: str,
+    request: EditReviewRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Accept or reject the files one editing run changed (rejecting restores the pre-edit content)."""
+    from agent.repository.service import ensure_repo_on_disk
+
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_id,
+            Session.user_id == current_user["sub"],
+            Session.repository_id == repository_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    result = await db.execute(
+        select(Repository).where(
+            Repository.id == repository_id,
+            Repository.user_id == current_user["sub"],
+        )
+    )
+    repository = result.scalar_one_or_none()
+    if not session or not repository or not (session.result or {}).get("edited_files"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No edits found for that session")
+
+    repo_path = await asyncio.to_thread(
+        ensure_repo_on_disk, repository.local_path, repository.files, repository.id
+    )
+    outcome = await asyncio.to_thread(
+        apply_review, repo_path, session.result, request.accept, request.reject, request.edited
+    )
+
+    # Reassign (don't mutate): JSON columns aren't change-tracked in place.
+    session.result = {**session.result, "edit_review": outcome["review"]}
+    files = dict(repository.files or {})
+    for path, content in outcome["files"].items():
+        if content is None:
+            files.pop(path, None)
+        else:
+            files[path] = content
+    repository.files = files
+    await db.commit()
+    return {"review": outcome["review"], "conflicts": outcome["conflicts"]}
 
 
 # =========================

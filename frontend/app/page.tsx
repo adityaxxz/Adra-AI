@@ -170,7 +170,7 @@ export default function Home() {
           {isLoggedIn ? (
             <Link
               href="/dashboard"
-              className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
+              className="btn-primary [background:#4f46e5] hover:[background:#4338ca] text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
               id="hero-cta-dashboard"
             >
               View Your Dashboard
@@ -179,7 +179,7 @@ export default function Home() {
           ) : (
             <Link
               href="/auth/signin"
-              className="btn-primary text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
+              className="btn-primary [background:#4f46e5] hover:[background:#4338ca] text-sm w-full sm:w-auto font-semibold font-body inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer glow-btn text-white"
               id="hero-cta-start"
             >
               Start Building Free

@@ -11,7 +11,7 @@ import uuid
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.graph import project_generation_agent, repository_editing_agent, question_answering_agent
-from agent.repository.service import index_repository, clone_github_repo
+from agent.repository.service import index_repository, clone_github_repo, clone_dir_for
 from agent.tools import set_project_root, init_project_root
 from agent.repository.vector_store import set_active_collection
 
@@ -280,8 +280,7 @@ class AgentIntegration:
         elif repository.url:
             # Clone GitHub repositories to local path if needed
             if repository.url.startswith('http'):
-                repo_name = repository.url.split('/')[-1].replace('.git', '')
-                local_repo_path = f"./temp_repos/{repo_name}"
+                local_repo_path = clone_dir_for(repository.name, repository.url)
                 # Ensure temp_repos directory exists
                 os.makedirs("./temp_repos", exist_ok=True)
                 try:

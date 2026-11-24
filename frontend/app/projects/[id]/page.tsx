@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { projectsAPI, generationAPI, repositoriesAPI } from '../../../api-client';
+import { saveBlob, zipName } from '../../../lib/downloadBlob';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 import { Sidebar } from '../../../components/Sidebar';
@@ -35,6 +36,7 @@ export default function ProjectPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [sidebarProjects, setSidebarProjects] = useState<any[]>([]);
@@ -135,6 +137,19 @@ export default function ProjectPage() {
 
   const handleDelete = () => {
     setDeleteConfirmOpen(true);
+  };
+
+  const handleDownload = async () => {
+    if (!project || downloading) return;
+    setDownloading(true);
+    try {
+      saveBlob(await projectsAPI.downloadProject(project.id), zipName(project.name, '-project'));
+    } catch (error) {
+      console.error(error);
+      alert('Failed to download project.');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const confirmDeleteAction = async () => {
@@ -245,6 +260,16 @@ export default function ProjectPage() {
                 {(project.status === 'pending' || project.status === 'failed') && (
                   <button onClick={handleStartGeneration} disabled={isGenerating} className="btn-primary text-sm">
                     {isGenerating ? 'Starting…' : project.status === 'failed' ? 'Regenerate' : 'Start Generation'}
+                  </button>
+                )}
+                {project.status === 'completed' && project.files && Object.keys(project.files).length > 0 && (
+                  <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="btn-secondary text-sm disabled:opacity-60 disabled:cursor-wait"
+                    id="download-project-btn"
+                  >
+                    {downloading ? 'Zipping…' : 'Download ZIP'}
                   </button>
                 )}
                 <button

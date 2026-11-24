@@ -70,3 +70,15 @@ def test_rehydrate_with_no_local_path_uses_a_fresh_temp_dir(tmp_path, monkeypatc
     out = S.ensure_repo_on_disk(None, {"a.py": "x"}, "repo-id")
     assert out.replace("\\", "/").endswith("temp_repos/repo-id")
     assert (tmp_path / "temp_repos" / "repo-id" / "a.py").exists()
+
+
+def test_clone_dir_uses_user_repository_name_not_github_name():
+    url = "https://github.com/someone/real-name.git"
+    assert S.clone_dir_for("my-test-2", url) == "./temp_repos/my-test-2"
+
+
+def test_clone_dir_sanitises_unsafe_names_and_falls_back_to_url():
+    url = "https://github.com/someone/real-name.git"
+    assert S.clone_dir_for(r"a/b..\c", url) == "./temp_repos/a_b.._c"
+    assert S.clone_dir_for("..", url) == "./temp_repos/real-name"
+    assert S.clone_dir_for("", url) == "./temp_repos/real-name"

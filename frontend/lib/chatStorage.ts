@@ -7,6 +7,8 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   editedFiles?: Record<string, string>;
+  originalFiles?: Record<string, string | null>;   // pre-edit content (null = file is new); enables the diff + reject
+  editReview?: Record<string, 'pending' | 'accepted' | 'rejected'>;   // missing path = still pending
   timestamp?: string;
   runSessionId?: string;       // backend session that produced this reply; what a rating is sent against
   rating?: 'up' | 'down';      // the user's rating of that reply, once saved

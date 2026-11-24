@@ -121,6 +121,13 @@ export const repositoriesAPI = {
     return response.data;
   },
 
+  downloadRepository: async (repositoryId: string): Promise<Blob> => {
+    const response = await api.get(`/repositories/${repositoryId}/download`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
   deleteRepository: async (repositoryId: string) => {
     const response = await api.delete(`/repositories/${repositoryId}`);
     return response.data;
@@ -157,6 +164,27 @@ export const feedbackAPI = {
   submit: async (data: { session_id: string; rating: 'up' | 'down'; comment?: string }) => {
     const response = await api.post('/feedback', data);
     return response.data;
+  },
+};
+
+export const editsAPI = {
+  // Accept/reject the files one editing run changed. `edited` holds hand-edited content for accepted files.
+  resolve: async (
+    repositoryId: string,
+    sessionId: string,
+    data: { accept: string[]; reject: string[]; edited: Record<string, string> }
+  ): Promise<{ review: Record<string, 'pending' | 'accepted' | 'rejected'>; conflicts: string[] }> => {
+    // The run's result is saved just after the WebSocket `complete` frame, so an
+    // immediate click can briefly 404; retry a couple of times before giving up.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await api.post(`/repositories/${repositoryId}/edits/${sessionId}/resolve`, data);
+        return response.data;
+      } catch (e: any) {
+        if (e?.response?.status !== 404 || attempt >= 2) throw e;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
   },
 };
 

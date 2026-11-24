@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChatMessage as ChatMessageType } from '../lib/chatStorage';
+import { EditedFilesReview, ResolveDecision } from './EditedFilesReview';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   onOpenFile?: (filePath: string, content: string) => void;
+  /** Accept/reject this reply's edits. Resolves with the paths left untouched because they changed since. */
+  onResolveEdits?: (decision: ResolveDecision) => Promise<string[]>;
   animate?: boolean;
   userName?: string;
   /** Rate this reply. Rejects if it could not be saved. Thumbs only show when this and message.runSessionId exist. */
@@ -174,7 +177,7 @@ function RatingButtons({ rating, onRate }: { rating?: 'up' | 'down'; onRate: (r:
   );
 }
 
-export function ChatMessage({ message, onOpenFile, animate = true, userName, onRate }: ChatMessageProps) {
+export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = true, userName, onRate }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasEditedFiles = message.editedFiles && Object.keys(message.editedFiles).length > 0;
 
@@ -199,8 +202,18 @@ export function ChatMessage({ message, onOpenFile, animate = true, userName, onR
           </div>
         )}
 
-        {/* Edited files card (editor mode) */}
-        {!isUser && hasEditedFiles && (
+        {/* Edited files: diff review when the run recorded the originals */}
+        {!isUser && hasEditedFiles && message.originalFiles && onResolveEdits && (
+          <EditedFilesReview
+            editedFiles={message.editedFiles!}
+            originalFiles={message.originalFiles}
+            review={message.editReview}
+            onResolve={onResolveEdits}
+          />
+        )}
+
+        {/* Edited files card (older replies saved without originals) */}
+        {!isUser && hasEditedFiles && !(message.originalFiles && onResolveEdits) && (
           <div
             className="rounded-xl overflow-hidden text-xs"
             style={{
