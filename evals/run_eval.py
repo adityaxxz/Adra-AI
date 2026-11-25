@@ -73,6 +73,9 @@ def main(argv=None) -> int:
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env")                             # before any agent import: they read keys at import time
+    from evals.keys import use_test_key
+
+    test_key = use_test_key()                              # evals run on GROQ_API_KEY_TEST when set, so they never drain the app's quota
 
     from evals.dataset import load_cases
     from evals.evaluators.judge import JUDGE_MODEL, Judge
@@ -101,7 +104,7 @@ def main(argv=None) -> int:
                      "judge_usage": None if judge is None else {"calls": judge.calls, "input_tokens": judge.input_tokens,
                                                                  "output_tokens": judge.output_tokens, "rate_limit_hits": judge.rate_limit_hits,
                                                                  "quota_exhausted": judge.exhausted},
-                     "stopped_early": runner.stopped_early,
+                     "stopped_early": runner.stopped_early, "groq_key": "GROQ_API_KEY_TEST" if test_key else "GROQ_API_KEY",
                      "exec": args.run_exec, "repeat": args.repeat, "infra_retries": args.infra_retries,
                      "min_interval": os.environ.get("LLM_MIN_INTERVAL_SEC"), "suite": args.suite, "cases_requested": [c["id"] for c in cases]},
             "summary": summarize(results),

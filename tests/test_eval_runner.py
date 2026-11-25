@@ -483,3 +483,39 @@ def test_the_report_says_when_the_run_stopped_early(tmp_path, monkeypatch):
     assert "tokens per day" in report["meta"]["stopped_early"]
     assert report["meta"]["cases_requested"] == ["qa-01-todo-storage", "qa-03-todo-auth-unanswerable"]
     assert len(report["cases"]) == 1
+
+
+# ------------------------------------------------ evals use their own Groq key when one is configured
+
+def test_the_test_key_replaces_the_app_key_only_when_set():
+    from evals.keys import use_test_key
+
+    env = {"GROQ_API_KEY": "app-key"}
+    assert use_test_key(env) is False and env["GROQ_API_KEY"] == "app-key"
+    env["GROQ_API_KEY_TEST"] = "   "
+    assert use_test_key(env) is False and env["GROQ_API_KEY"] == "app-key", "a blank value must not blank the real key"
+    env["GROQ_API_KEY_TEST"] = " eval-key "
+    assert use_test_key(env) is True and env["GROQ_API_KEY"] == "eval-key" and env["GROQ_API_KEY_TEST"] == " eval-key "
+
+
+def test_run_eval_applies_the_test_key_before_the_agents_are_built(tmp_path, monkeypatch):
+    import os
+
+    import dotenv
+    import evals.pipeline as P
+
+    seen = {}
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setenv("GROQ_API_KEY", "app-key")
+    monkeypatch.setenv("GROQ_API_KEY_TEST", "eval-key")
+
+    def build(recursion_limit=60):
+        seen["key_when_agents_are_built"] = os.environ["GROQ_API_KEY"]
+        return FakePipeline()
+
+    monkeypatch.setattr(P, "LivePipeline", build)
+    out = tmp_path / "r.json"
+    run_eval.main(["--case", "qa-01-todo-storage", "--no-judge", "--out", str(out)])
+    assert seen["key_when_agents_are_built"] == "eval-key"
+    assert json.loads(out.read_text(encoding="utf-8"))["meta"]["groq_key"] == "GROQ_API_KEY_TEST"
+    assert "eval-key" not in out.read_text(encoding="utf-8"), "the key itself must never reach a report"

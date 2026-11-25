@@ -24,9 +24,13 @@
 - id: gen-03-blog-api
   mode: generation
   source: seeded-inferred
+  # The route/field sentence was added on 2026-11-25 so the API can be exercised by the exec check below (it caught a
+  # generated app that never created its tables, which only the LLM judge had noticed). Results before that date ran
+  # the shorter prompt.
   prompt: >-
     Build a blog REST API using FastAPI and SQLite. Posts have a title, a body and a created time, and the API
-    supports creating, listing, fetching, updating and deleting posts.
+    supports creating, listing, fetching, updating and deleting posts. Use the routes POST /posts, GET /posts,
+    GET /posts/{id}, PUT /posts/{id} and DELETE /posts/{id}, with the JSON fields id, title and body.
   expect:
     files_exist: ["requirements.txt", "*.py"]
     declared_dependencies: true
@@ -35,6 +39,148 @@
       - {file: "*.py", any: ["sqlite"]}
       - {file: "*.py", regex: '@\w+\.delete'}
       - {file: "*.py", regex: '@\w+\.(put|patch)'}
+    exec:
+      - name: the API works end to end on a fresh database
+        timeout: 60
+        snippet: |
+          import importlib, os, re, sys
+          sys.path.insert(0, os.getcwd())
+          from fastapi import FastAPI
+          from fastapi.testclient import TestClient
+
+          app = None
+          for name in ("app.main", "main", "app"):
+              try:
+                  mod = importlib.import_module(name)
+              except ModuleNotFoundError as e:
+                  if e.name in (name, name.split(".")[0]):
+                      continue                    # no such module in this project: try the next layout
+                  # a dependency the app declares but this machine lacks is not the app's fault; anything else is
+                  missing, declared = e.name.split(".")[0].lower().replace("-", "_"), set()
+                  if os.path.exists("requirements.txt"):
+                      for line in open("requirements.txt", encoding="utf-8"):
+                          line = line.split("#")[0].strip()
+                          if line:
+                              pkg = re.match("[A-Za-z0-9_.-]+", line)
+                              if pkg:
+                                  declared.add(pkg.group(0).lower().replace("-", "_"))
+                  if missing in declared:
+                      print(f"SKIP: the app needs the package {e.name!r}, which is not installed where the evals run")
+                      sys.exit(0)
+                  raise
+              app = next((v for v in vars(mod).values() if isinstance(v, FastAPI)), None)
+              if app is not None:
+                  break
+          assert app is not None, "no FastAPI app found in app/main.py, main.py or app.py"
+
+          with TestClient(app) as c:                 # runs startup/lifespan, where many apps create their tables
+              r = c.post("/posts", json={"title": "Hello", "body": "First post"})
+              assert r.status_code in (200, 201), f"create: {r.status_code} {r.text[:200]}"
+              pid = r.json()["id"]
+              r = c.get("/posts")
+              assert r.status_code == 200 and any(p["id"] == pid for p in r.json()), f"list: {r.status_code} {r.text[:200]}"
+              r = c.get(f"/posts/{pid}")
+              assert r.status_code == 200 and r.json()["title"] == "Hello", f"fetch: {r.status_code} {r.text[:200]}"
+              r = c.put(f"/posts/{pid}", json={"title": "Edited", "body": "Changed"})
+              if r.status_code == 405:
+                  r = c.patch(f"/posts/{pid}", json={"title": "Edited", "body": "Changed"})
+              assert r.status_code == 200 and c.get(f"/posts/{pid}").json()["title"] == "Edited", f"update: {r.status_code} {r.text[:200]}"
+              r = c.delete(f"/posts/{pid}")
+              assert r.status_code in (200, 204), f"delete: {r.status_code} {r.text[:200]}"
+              assert c.get(f"/posts/{pid}").status_code == 404, "a deleted post can still be fetched"
+          print("ok")
+        stdout_contains: ["ok"]
+  solution:
+    requirements.txt: |
+      fastapi
+      uvicorn
+      sqlalchemy
+      pydantic
+    main.py: |
+      from datetime import datetime
+
+      from fastapi import Depends, FastAPI, HTTPException
+      from pydantic import BaseModel, ConfigDict
+      from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
+      from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+      engine = create_engine("sqlite:///./blog.db", connect_args={"check_same_thread": False})
+      SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+      Base = declarative_base()
+
+
+      class Post(Base):
+          __tablename__ = "posts"
+          id = Column(Integer, primary_key=True)
+          title = Column(String(200), nullable=False)
+          body = Column(Text, nullable=False)
+          created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+      Base.metadata.create_all(bind=engine)
+
+
+      class PostIn(BaseModel):
+          title: str
+          body: str
+
+
+      class PostOut(PostIn):
+          model_config = ConfigDict(from_attributes=True)
+          id: int
+          created_at: datetime
+
+
+      app = FastAPI(title="Blog API")
+
+
+      def get_db():
+          db = SessionLocal()
+          try:
+              yield db
+          finally:
+              db.close()
+
+
+      def _get_or_404(db: Session, post_id: int) -> Post:
+          post = db.get(Post, post_id)
+          if post is None:
+              raise HTTPException(status_code=404, detail="Post not found")
+          return post
+
+
+      @app.post("/posts", response_model=PostOut, status_code=201)
+      def create_post(data: PostIn, db: Session = Depends(get_db)):
+          post = Post(title=data.title, body=data.body)
+          db.add(post)
+          db.commit()
+          db.refresh(post)
+          return post
+
+
+      @app.get("/posts", response_model=list[PostOut])
+      def list_posts(db: Session = Depends(get_db)):
+          return db.query(Post).order_by(Post.id).all()
+
+
+      @app.get("/posts/{post_id}", response_model=PostOut)
+      def get_post(post_id: int, db: Session = Depends(get_db)):
+          return _get_or_404(db, post_id)
+
+
+      @app.put("/posts/{post_id}", response_model=PostOut)
+      def update_post(post_id: int, data: PostIn, db: Session = Depends(get_db)):
+          post = _get_or_404(db, post_id)
+          post.title, post.body = data.title, data.body
+          db.commit()
+          db.refresh(post)
+          return post
+
+
+      @app.delete("/posts/{post_id}", status_code=204)
+      def delete_post(post_id: int, db: Session = Depends(get_db)):
+          db.delete(_get_or_404(db, post_id))
+          db.commit()
   judge:
     notes: Every one of the five operations must be implemented and wired to SQLite, not stubbed or kept in memory.
 

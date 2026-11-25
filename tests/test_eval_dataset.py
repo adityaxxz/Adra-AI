@@ -147,3 +147,52 @@ def test_qa_05_rejects_the_hedged_wrong_answer_the_agent_actually_gave():
     assert S.answer_contains(wrong, case["expect"]["answer_contains"]).passed is False
     assert S.answer_contains(case["reference"], case["expect"]["answer_contains"]).passed
     assert S.answer_contains("It raises FileNotFoundError, so the request fails with a 500.", case["expect"]["answer_contains"]).passed
+
+
+# ---------------------------------------------- gen-03: the run-the-API check catches what only the judge did
+
+def _gen03_exec(files):
+    case = next(c for c in CASES if c["id"] == "gen-03-blog-api")
+    return [o for o in E.evaluate_project(case, after=files, before=None, run_exec=True) if o.kind == "exec"][0]
+
+
+def _gen03_solution():
+    return dict(next(c for c in CASES if c["id"] == "gen-03-blog-api")["solution"])
+
+
+def test_gen03_fails_an_app_that_never_creates_its_tables():
+    """Live 2026-11-25: a generated blog API had no Base.metadata.create_all(); every structural check passed and
+    only the LLM judge noticed. The exec check must catch it on its own."""
+    files = _gen03_solution()
+    files["main.py"] = files["main.py"].replace("Base.metadata.create_all(bind=engine)\n", "")
+    assert "create_all" not in files["main.py"]
+    o = _gen03_exec(files)
+    assert o.passed is False, o.detail
+
+
+def test_gen03_fails_an_app_whose_delete_does_nothing():
+    files = _gen03_solution()
+    files["main.py"] = files["main.py"].replace("    db.delete(_get_or_404(db, post_id))\n", "    _get_or_404(db, post_id)\n")
+    assert _gen03_exec(files).passed is False
+
+
+def test_gen03_finds_the_app_in_an_app_package_too():
+    files = _gen03_solution()
+    files["app/__init__.py"] = ""
+    files["app/main.py"] = files.pop("main.py")
+    assert _gen03_exec(files).passed is True
+
+
+def test_gen03_skips_rather_than_fails_when_a_declared_package_is_not_installed_here():
+    files = _gen03_solution()
+    files["requirements.txt"] += "surely_not_installed_pkg\n"
+    files["main.py"] = "import surely_not_installed_pkg\n" + files["main.py"]
+    o = _gen03_exec(files)
+    assert o.passed is None and "surely_not_installed_pkg" in o.detail
+
+
+def test_gen03_fails_when_the_app_imports_a_module_nobody_wrote():
+    """Not declared and not in the project: that is a broken app, not a missing install."""
+    files = _gen03_solution()
+    files["main.py"] = "from schemas import PostIn as _unused\n" + files["main.py"]
+    assert _gen03_exec(files).passed is False

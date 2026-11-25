@@ -273,3 +273,22 @@ def test_retrieval_only_counts_the_top_k_and_normalises_paths():
     assert retrieval_metrics(["x.py", "y.py", "src\\target.py"], ["src/target.py"], k=3)["hit"] is True
     o = retrieval_outcome(["a.py"], ["b.py"])
     assert o.passed is False and o.required is False and o.kind == "retrieval"     # advisory: reported, never fails a case alone
+
+
+def test_an_exec_check_can_report_that_it_could_not_run_here():
+    """A project that needs a package the eval machine lacks is not broken; the check says so instead of failing."""
+    (o,) = S.run_exec_checks({}, [{"name": "needs sqlmodel", "snippet": "print('SKIP: needs sqlmodel')", "stdout_contains": ["ok"]}])
+    assert o.passed is None and "sqlmodel" in o.detail
+    (bad,) = S.run_exec_checks({}, [{"name": "crashes", "snippet": "print('SKIP: x'); raise SystemExit(3)"}])
+    assert bad.passed is False, "a non-zero exit is a failure even if it printed SKIP"
+
+
+def test_a_failed_exec_check_reports_the_exception_not_a_trailing_note():
+    """SQLAlchemy ends its errors with "(Background on this error at: <url>)", which used to be all the report showed."""
+    snippet = ("import sys\n"
+               "sys.stderr.write('Traceback (most recent call last):\\n  File x\\n"
+               "sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: posts\\n"
+               "[SQL: INSERT INTO posts]\\n(Background on this error at: https://sqlalche.me/e/20/e3q8)\\n')\n"
+               "raise SystemExit(1)\n")
+    (o,) = S.run_exec_checks({}, [{"name": "api", "snippet": snippet}])
+    assert o.passed is False and "no such table: posts" in o.detail, o.detail

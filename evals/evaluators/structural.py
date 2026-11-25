@@ -473,8 +473,15 @@ def run_exec_checks(files: dict, checks: list[dict], default_timeout: int = 20) 
                 outcomes.append(Outcome(name, "exec", False, "timed out"))
                 continue
             missing = [s for s in chk.get("stdout_contains", []) if s.lower() not in r.stdout.lower()]
-            if r.returncode != 0:
-                tail = (r.stderr.strip().splitlines() or ["(no stderr)"])[-1][:200]
+            skip = next((ln.strip() for ln in r.stdout.splitlines() if ln.startswith("SKIP:")), None)
+            if r.returncode == 0 and skip:
+                # the check could not run here (e.g. the project needs a package this machine lacks): neither pass nor fail
+                outcomes.append(Outcome(name, "exec", None, skip[:200]))
+            elif r.returncode != 0:
+                lines = r.stderr.strip().splitlines() or ["(no stderr)"]
+                # the exception line, not trailing notes such as SQLAlchemy's "(Background on this error at: ...)"
+                errors = [ln.strip() for ln in lines if re.match(r"\s*[\w.]+(Error|Exception)\b", ln)]
+                tail = (errors or lines)[-1][:200]
                 outcomes.append(Outcome(name, "exec", False, f"exit {r.returncode}: {tail}"))
             elif missing:
                 outcomes.append(Outcome(name, "exec", False, f"stdout lacks {missing}; got {r.stdout.strip()[:150]!r}"))
