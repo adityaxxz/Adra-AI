@@ -1,6 +1,6 @@
 """Check the LLM judge against labelled good/bad outputs (real model calls: one per item, 20 items).
 
-    python -m evals.calibrate_judge [--model gemini-2.5-flash-lite]
+    python -m evals.calibrate_judge [--model gemini-3.5-flash-lite]
 
 Mind the provider's quota: Gemini's free tier allows very few requests per day per model.
 """
@@ -13,6 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+from evals.keys import use_test_keys  # noqa: E402
+
+use_test_keys()                     # judge on GOOGLE_API_KEY_TEST when set, like the eval runs
 
 from evals.calibration import ITEMS, run_calibration  # noqa: E402
 from evals.evaluators.judge import JUDGE_MODEL, Judge  # noqa: E402

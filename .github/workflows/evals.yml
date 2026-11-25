@@ -4,11 +4,11 @@ name: Evals (quality gate)
 # fails if clearly fewer cases pass than in the saved reference run (evals/baselines/reference.json).
 #
 # Manual only (Actions tab -> "Evals (quality gate)" -> Run workflow): one run costs ~92k Groq tokens, nearly half of a
-# free-tier key's 200k/day, and ~14 Gemini Flash-Lite judge calls (free tier ~20/day), and takes ~40 minutes.
+# free-tier key's 200k/day, and ~14 Gemini 3.5 Flash-Lite judge calls (free tier 500/day), and takes ~40 minutes.
 #
 # Needs two repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret):
 #   GROQ_API_KEY_TEST  a Groq key used only by evals (the agents)
-#   GOOGLE_API_KEY     a Google AI key (embeddings + the judge)
+#   GOOGLE_API_KEY     a Google AI key (embeddings + the judge); new Google accounts cannot use the 2.5 models
 #
 # Exit status: success = no regression; failure = more than 2 fewer passing cases than the reference, or a run that
 # could not be compared (stopped early, cases left unjudged, different cases). The report is attached either way.
@@ -59,7 +59,7 @@ jobs:
 
       - name: Run the evals and compare with the saved reference
         run: >-
-          python -m evals.run_eval --exec --judge-model gemini-2.5-flash-lite --min-interval 20
+          python -m evals.run_eval --exec --judge-model gemini-3.5-flash-lite --min-interval 20
           --label ci --out eval-report.json
           --baseline evals/baselines/reference.json --max-drop 2
 

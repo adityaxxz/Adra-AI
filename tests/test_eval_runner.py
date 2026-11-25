@@ -487,15 +487,18 @@ def test_the_report_says_when_the_run_stopped_early(tmp_path, monkeypatch):
 
 # ------------------------------------------------ evals use their own Groq key when one is configured
 
-def test_the_test_key_replaces_the_app_key_only_when_set():
-    from evals.keys import use_test_key
+def test_the_test_keys_replace_the_app_keys_only_when_set():
+    from evals.keys import use_test_keys
 
-    env = {"GROQ_API_KEY": "app-key"}
-    assert use_test_key(env) is False and env["GROQ_API_KEY"] == "app-key"
+    env = {"GROQ_API_KEY": "app-key", "GOOGLE_API_KEY": "app-google"}
+    assert use_test_keys(env) == [] and env["GROQ_API_KEY"] == "app-key" and env["GOOGLE_API_KEY"] == "app-google"
     env["GROQ_API_KEY_TEST"] = "   "
-    assert use_test_key(env) is False and env["GROQ_API_KEY"] == "app-key", "a blank value must not blank the real key"
+    assert use_test_keys(env) == [] and env["GROQ_API_KEY"] == "app-key", "a blank value must not blank the real key"
     env["GROQ_API_KEY_TEST"] = " eval-key "
-    assert use_test_key(env) is True and env["GROQ_API_KEY"] == "eval-key" and env["GROQ_API_KEY_TEST"] == " eval-key "
+    assert use_test_keys(env) == ["GROQ_API_KEY_TEST"] and env["GROQ_API_KEY"] == "eval-key"
+    assert env["GOOGLE_API_KEY"] == "app-google", "each key is independent"
+    env["GOOGLE_API_KEY_TEST"] = "eval-google"
+    assert use_test_keys(env) == ["GROQ_API_KEY_TEST", "GOOGLE_API_KEY_TEST"] and env["GOOGLE_API_KEY"] == "eval-google"
 
 
 def test_run_eval_applies_the_test_key_before_the_agents_are_built(tmp_path, monkeypatch):
@@ -508,6 +511,7 @@ def test_run_eval_applies_the_test_key_before_the_agents_are_built(tmp_path, mon
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
     monkeypatch.setenv("GROQ_API_KEY", "app-key")
     monkeypatch.setenv("GROQ_API_KEY_TEST", "eval-key")
+    monkeypatch.delenv("GOOGLE_API_KEY_TEST", raising=False)
 
     def build(recursion_limit=60):
         seen["key_when_agents_are_built"] = os.environ["GROQ_API_KEY"]
@@ -517,5 +521,5 @@ def test_run_eval_applies_the_test_key_before_the_agents_are_built(tmp_path, mon
     out = tmp_path / "r.json"
     run_eval.main(["--case", "qa-01-todo-storage", "--no-judge", "--out", str(out)])
     assert seen["key_when_agents_are_built"] == "eval-key"
-    assert json.loads(out.read_text(encoding="utf-8"))["meta"]["groq_key"] == "GROQ_API_KEY_TEST"
+    assert json.loads(out.read_text(encoding="utf-8"))["meta"]["test_keys"] == ["GROQ_API_KEY_TEST"]
     assert "eval-key" not in out.read_text(encoding="utf-8"), "the key itself must never reach a report"

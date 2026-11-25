@@ -21,11 +21,13 @@ python -m evals.run_eval                                 # everything, with the 
 python -m evals.run_eval --exec                          # also run each case's executable checks
 python -m evals.run_eval --case edit-04-truncate-bug     # one case (repeatable)
 python -m evals.run_eval --repeat 3 --no-judge           # run each case 3x to find flaky ones
-python -m evals.run_eval --judge-model gemini-2.5-flash-lite   # a different judge model (or set EVAL_JUDGE_MODEL)
+python -m evals.run_eval --judge-model gemini-3.5-flash      # a different judge model (or set EVAL_JUDGE_MODEL)
 python -m evals.run_eval --min-interval 20              # pace the agent's LLM calls (Groq's free tier caps tokens/minute)
 python -m evals.run_eval --judge-all                    # also judge cases that already failed a deterministic check
-python -m evals.calibrate_judge --model gemini-2.5-flash-lite   # does the judge agree with labelled good/bad outputs?
+python -m evals.calibrate_judge                          # does the judge agree with labelled good/bad outputs?
 ```
+
+**Keys and judge.** If `GROQ_API_KEY_TEST` / `GOOGLE_API_KEY_TEST` are set (e.g. in `.env`), the evals use them instead of the app's keys (`evals/keys.py`). The judge is `gemini-3.5-flash-lite` (20/20 on calibration, 500 requests/day free); the 2.5 models are closed to new Google accounts.
 
 **Provider limits are real.** Gemini's free tier allows roughly 20 requests per day *per model* (a calibration run
 alone uses them all) and Groq's on-demand tier 8,000 tokens/minute for `gpt-oss-120b`. The harness re-runs a case
@@ -93,7 +95,7 @@ press **Run workflow**. One run costs ~92k Groq tokens (nearly half of a free ke
 **Updating the reference** (after a change that is meant to move the numbers, e.g. a better prompt, or after adding cases):
 
 ```bash
-python -m evals.run_eval --exec --judge-model gemini-2.5-flash-lite --min-interval 20 --write-baseline evals/baselines/reference.json
+python -m evals.run_eval --exec --judge-model gemini-3.5-flash-lite --min-interval 20 --write-baseline evals/baselines/reference.json
 ```
 
 then commit `evals/baselines/reference.json`. A run that stopped early or left cases unjudged is refused as a reference.

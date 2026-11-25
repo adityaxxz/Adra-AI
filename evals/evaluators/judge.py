@@ -1,4 +1,8 @@
-"""LLM-as-judge using Gemini 2.5 Flash.
+"""LLM-as-judge using Gemini 3.5 Flash-Lite.
+
+Chosen 2026-11-26: it agreed with all 20 labelled good/bad outputs (`calibrate_judge`), correctly passed a real edit that
+2.5 Flash-Lite had wrongly failed, has a 500 requests/day free tier (2.5: 20/day), and the 2.5 models are closed to new
+accounts.
 
 The model under test is `openai/gpt-oss-120b` on Groq, so the judge is a different
 model family (avoiding self-preference bias). It is deliberately NOT built on
@@ -19,7 +23,7 @@ from pydantic import BaseModel, Field
 from agent.rate_limit import classify_rate_limit
 from evals.evaluators.outcome import Outcome
 
-JUDGE_MODEL = os.getenv("EVAL_JUDGE_MODEL", "gemini-2.5-flash")
+JUDGE_MODEL = os.getenv("EVAL_JUDGE_MODEL", "gemini-3.5-flash-lite")
 MIN_INTERVAL = float(os.getenv("EVAL_JUDGE_MIN_INTERVAL", "4"))
 DEFAULT_MIN_SCORE = 0.8          # fraction of 5 -> a threshold of 4/5 on every dimension
 MAX_PROMPT_CHARS = 30_000

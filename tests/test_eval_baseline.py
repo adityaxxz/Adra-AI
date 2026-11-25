@@ -142,7 +142,7 @@ def test_the_gate_only_runs_when_pressed():
 def test_the_gate_runs_the_agreed_configuration_against_the_saved_reference():
     text = (ROOT / ".github/workflows/evals.yml").read_text(encoding="utf-8")
     step = next(s["run"] for s in _workflow()["jobs"]["evals"]["steps"] if "evals.run_eval" in str(s.get("run", "")))
-    for flag in ("--exec", "--judge-model gemini-2.5-flash-lite", "--baseline evals/baselines/reference.json", "--max-drop 2"):
+    for flag in ("--exec", "--judge-model gemini-3.5-flash-lite", "--baseline evals/baselines/reference.json", "--max-drop 2"):
         assert flag in step, flag
     assert "--case" not in step and "--suite" not in step, "all 15 cases"
     assert "${{ secrets.GROQ_API_KEY_TEST }}" in text and "${{ secrets.GOOGLE_API_KEY }}" in text
