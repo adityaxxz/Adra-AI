@@ -65,6 +65,9 @@ def architect_prompt(plan: str) -> str:
         - EXCEPTION: the dependency manifest (requirements.txt, package.json) is ALWAYS the LAST step, so that the
           coder writing it can see every other file. Its task_description must say: declare every third-party package
           imported anywhere in the project, and nothing that is only part of the standard library.
+        - If the project defines database models with an ORM (e.g. SQLAlchemy, SQLModel), the task for the application's
+          entry point (e.g. main.py) must include creating the tables at startup, after the models are imported
+          (e.g. Base.metadata.create_all(bind=engine)). Without it the first request fails with "no such table".
         - In each task_description:
             * Specify exactly what to implement in that single file.
             * Name the key symbols (functions, classes, constants, types, config keys, public APIs).
@@ -121,7 +124,13 @@ def coder_prompt( filepath: str, task_description: str, existing_content: str, p
     """
 
 
-def integrator_prompt(project_files: str, plan_summary: str, reference_context: str = "") -> str:
+# Only for a project generated from scratch: an existing repository may create its tables through migrations.
+_NEW_PROJECT_CHECKS = """
+        - Database tables that are never created: if ORM models are defined (e.g. SQLAlchemy, SQLModel) but nothing
+          calls metadata.create_all(...) when the app starts, add it to the entry point after the models are imported."""
+
+
+def integrator_prompt(project_files: str, plan_summary: str, reference_context: str = "", new_project: bool = False) -> str:
     reference_section = f"""
 
         REFERENCE CONTEXT (pre-existing code, read-only — you may NOT return updates for these):
@@ -142,7 +151,7 @@ def integrator_prompt(project_files: str, plan_summary: str, reference_context: 
         - Missing exports or public interfaces that dependent files expect to call or import
         - Mismatched names between files (imports vs exports, config keys, shared constants)
         - Wrong file paths, module paths, or resource references
-        - Logic bugs that prevent core features from working end-to-end
+        - Logic bugs that prevent core features from working end-to-end{_NEW_PROJECT_CHECKS if new_project else ""}
 
         SCOPE RULES (critical):
         - Return updates ONLY for files listed under FILES TO REVIEW. Updates for any other

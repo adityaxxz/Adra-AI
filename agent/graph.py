@@ -283,7 +283,8 @@ def integrator_agent(state: dict) -> dict:
     # the integrator doesn't flag symbols it simply wasn't shown.
     reference_context = truncate_for_context(state.get("retrieved_context", ""), max_chars=4000)
 
-    prompt = integrator_prompt(project_files, _plan_summary(task_plan), reference_context)
+    # Editing runs always carry the repository they edit; a run without one generates a new project.
+    prompt = integrator_prompt(project_files, _plan_summary(task_plan), reference_context, new_project=not state.get("repo_path"))
     result = structured_invoke(IntegrationResult, prompt, agent="integrator", session_id=state.get("session_id"))
 
     allowed = {p.replace("\\", "/") for p in shown}

@@ -410,3 +410,30 @@ def test_the_editing_graph_reports_each_stage_as_it_starts(project, monkeypatch)
         "Writing b.py (2 of 2)",
         "Checking everything fits together",
     ]
+
+
+# --------------------------------------------- the table-creation check is for new projects only
+
+def test_the_integrator_gets_the_table_check_when_generating_a_new_project(project, monkeypatch):
+    def respond(schema):
+        if schema is Plan:
+            return Plan(name="Blog", description="d", techstack="python", features=["f"], files=[File(path="main.py", purpose="p")])
+        if schema is TaskPlan:
+            return TaskPlan(steps=[Architect(filepath="main.py", task_description="api")])
+        if schema is CoderOutput:
+            return CoderOutput(content="x = 1\n")
+        if schema is IntegrationResult:
+            return IntegrationResult(updates=[])
+        raise AssertionError(schema)
+
+    llm = RecordingLLM(respond)
+    monkeypatch.setattr(G, "structured_invoke", llm)
+    G.project_generation_agent.invoke({"user_prompt": "blog", "session_id": "s"}, {"recursion_limit": 30})
+    assert "create_all" in llm.calls["IntegrationResult"][0]["prompt"]
+
+
+def test_the_integrator_does_not_get_the_table_check_when_editing_a_repo(project, monkeypatch):
+    _edit_repo(project)
+    llm = _editing_llm()
+    _run_editing(project, monkeypatch, llm)
+    assert "create_all" not in llm.calls["IntegrationResult"][0]["prompt"]
