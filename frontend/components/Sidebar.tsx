@@ -224,14 +224,14 @@ function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession,
                   <Link
                     href={`/repositories/${repo.id}?session=${session.id}`}
                     onClick={() => onSelectSession?.(session.id)}
-                    className={`sidebar-chat-item ${isActive ? 'active' : ''}`}
+                    className={`sidebar-chat-item group-hover:pr-8 ${isActive ? 'active' : ''}`}
                   >
                     <ChatIcon />
                     <span className="flex-1 truncate">{session.title}</span>
                   </Link>
                   <button
                     onClick={(e) => handleDeleteSession(e, session.id)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:!text-danger"
                     style={{ color: 'var(--text-muted)' }}
                     title="Delete chat"
                   >

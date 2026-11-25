@@ -76,7 +76,6 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
   const theme = useTheme();
   const paths = Object.keys(editedFiles);
   const [open, setOpen] = useState<Set<string>>(() => new Set(paths.length === 1 ? paths : []));
-  const [sideBySide, setSideBySide] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -146,15 +145,7 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
           {pending.length > 0 ? `${pending.length} to review` : 'all reviewed'}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setSideBySide(v => !v)}
-            className="px-2 py-1 rounded-md"
-            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            title="Switch between inline and side-by-side diffs"
-          >
-            {sideBySide ? 'Side by side' : 'Inline'}
-          </button>
+          <span className="px-2 py-1" style={{ color: 'var(--text-muted)' }}>Inline</span>
           {pending.length > 1 && (
             <>
               <ActionButton label="Reject all" color="var(--danger)" disabled={busy}
@@ -230,7 +221,8 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
                   options={{
                     // Show only what changed, with a few lines of context; the rest folds into "Show N hidden lines".
                     hideUnchangedRegions: { enabled: true, contextLineCount: 4, minimumLineCount: 3, revealLineCount: 20 },
-                    renderSideBySide: sideBySide,
+                    // Inline only: in a chat-width card Monaco falls back to inline anyway.
+                    renderSideBySide: false,
                     originalEditable: false,
                     readOnly: status !== 'pending',   // hand-edit only while undecided
                     minimap: { enabled: false },
