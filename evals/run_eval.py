@@ -101,6 +101,7 @@ def main(argv=None) -> int:
                      "judge_usage": None if judge is None else {"calls": judge.calls, "input_tokens": judge.input_tokens,
                                                                  "output_tokens": judge.output_tokens, "rate_limit_hits": judge.rate_limit_hits,
                                                                  "quota_exhausted": judge.exhausted},
+                     "stopped_early": runner.stopped_early,
                      "exec": args.run_exec, "repeat": args.repeat, "infra_retries": args.infra_retries,
                      "min_interval": os.environ.get("LLM_MIN_INTERVAL_SEC"), "suite": args.suite, "cases_requested": [c["id"] for c in cases]},
             "summary": summarize(results),
@@ -122,6 +123,8 @@ def main(argv=None) -> int:
     print("\n" + format_summary(report["summary"]))
     if judge is not None and judge.exhausted:
         print(f"\nWARNING: judge stopped early - {judge.exhausted}. Unjudged cases are reported as 'unavailable', not as passes.")
+    if runner.stopped_early:
+        print(f"\nWARNING: stopped early - {runner.stopped_early[:200]}. The remaining cases were NOT run; this is not a full result.")
     print(f"\nreport: {out}")
     rate = report["summary"]["overall"]["pass_rate"] or 0
     if args.min_pass_rate is not None and rate < args.min_pass_rate:

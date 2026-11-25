@@ -127,6 +127,30 @@ def test_placeholders_are_flagged_in_code_but_not_in_legitimate_text():
     assert S.no_placeholders(ok_files).passed
 
 
+def test_ordinary_todo_app_code_is_not_mistaken_for_a_placeholder():
+    """gen-01 (a to-do web app) failed live on `styles.css:15`: '#' was treated as a comment opener in every
+    language, so a CSS id selector like #todo-list matched case-insensitively."""
+    for name, text in {
+        "styles.css": "body { margin: 0; }\n#todo-list {\n  padding: 0;\n}\n#todo-input:focus { outline: none; }\n",
+        "a.css": "/* Todo list styles */\n.todo-item { color: #333; }\n",
+        "index.html": '<a href="#todo-section">jump</a><section id="todo-section"></section>',
+        "app.js": "const el = document.querySelector('#todo-list');\n// Todo items are rendered here\n",
+        "a.py": "# Todo items live in this list\nitems = []\n",
+        "upper.css": "#TODO-LIST { margin: 0; }\n",                       # '#' only opens a comment in Python
+        "upper.html": '<a href="#TODO">jump</a><section id="TODO"></section>',
+    }.items():
+        assert S.no_placeholders({name: text}).passed, name
+
+
+def test_real_placeholders_are_still_caught_in_every_comment_style():
+    for name, text in {
+        "a.py": "# TODO: finish\n", "a.py ": "#TODO\n", "b.py": "# todo: finish\n", "a.js": "// TODO implement\n",
+        "a.css": "/* FIXME */\n", "a.html": "<!-- TODO: add form -->\n", "c.js": "/* XXX hack */\n", "d.js": "// fixme: later\n",
+        "e.py": "def f():\n    raise NotImplementedError\n", "f.js": "function f() { /* your code here */ }\n",
+    }.items():
+        assert S.no_placeholders({name.strip(): text}).passed is False, name
+
+
 def test_contains_rules():
     files = {"app.js": "document.addEventListener('click', f)", "index.html": "<BUTTON>Go</BUTTON>"}
     assert S.contains(files, [{"file": "*.js", "any": ["addEventListener", "onclick"]}, {"file": "*.html", "any": ["<button"]}]).passed

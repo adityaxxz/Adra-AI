@@ -2,6 +2,7 @@
 from typing import Optional
 
 from evals.evaluators import structural as S
+from agent.repository.models import DEFAULT_RETRIEVAL_K
 from evals.evaluators.outcome import Outcome, skipped
 from evals.evaluators.retrieval import retrieval_outcome
 
@@ -65,7 +66,7 @@ def evaluate_answer(case: dict, answer: str, retrieved_paths: list[str]) -> list
     expect = case.get("expect", {})
     out = []
     if expect.get("sources"):
-        out.append(retrieval_outcome(retrieved_paths, expect["sources"], expect.get("k", 5)))
+        out.append(retrieval_outcome(retrieved_paths, expect["sources"], expect.get("k", DEFAULT_RETRIEVAL_K)))
     if not answer.strip():
         from evals.evaluators.outcome import fail
         return out + [fail("non_empty_answer", "the agent returned no answer")]

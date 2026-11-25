@@ -293,7 +293,12 @@ def dom_ids_resolve(files: dict) -> Outcome:
 
 # ------------------------------------------------------------------ content heuristics
 
-_PLACEHOLDER = re.compile(r"(#|//|/\*|<!--)\s*(TODO|FIXME|XXX)\b|raise\s+NotImplementedError|\b(implement (me|this|here)|your code here)\b", re.I)
+# A marker is TODO/FIXME/XXX in capitals right after a comment opener, or `todo:`/`fixme:` in any case. Matching them
+# case-insensitively after "#" flagged `#todo-list { }` (a CSS id), `href="#todo"` and "/* Todo list styles */" in every
+# to-do app. "#" only opens a comment in Python here.
+_MARKER = r"(?:(?-i:TODO|FIXME|XXX)\b|(?i:todo|fixme)\s*:)"
+_PLACEHOLDER = re.compile(r"(//|/\*|<!--)\s*" + _MARKER + r"|raise\s+NotImplementedError|\b(implement (me|this|here)|your code here)\b", re.I)
+_PLACEHOLDER_PY = re.compile(r"#\s*" + _MARKER, re.I)
 
 
 def no_placeholders(files: dict) -> Outcome:
@@ -303,7 +308,7 @@ def no_placeholders(files: dict) -> Outcome:
         if PurePosixPath(p).suffix not in CODE_EXTS:
             continue
         for i, line in enumerate(text.splitlines(), 1):
-            if _PLACEHOLDER.search(line):
+            if _PLACEHOLDER.search(line) or (p.endswith(".py") and _PLACEHOLDER_PY.search(line)):
                 hits.append(f"{p}:{i}")
     return fail("no_placeholders", f"placeholders at {hits[:6]}") if hits else ok("no_placeholders")
 

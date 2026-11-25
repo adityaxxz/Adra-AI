@@ -10,11 +10,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from agent.rate_limit import classify_rate_limit
+from agent.repository.models import DEFAULT_RETRIEVAL_K
 from evals import dataset as D
 from evals.evaluators import evaluate as E
 from evals.evaluators.outcome import Outcome
 
-QA_K = 5
+MAX_KEPT_FILE_CHARS = 20_000          # per file, for the output kept with a failed case
+QA_K = DEFAULT_RETRIEVAL_K            # the agent's own k: retrieval metrics must describe the real pipeline
 
 _INFRA = re.compile(r"429|rate.?limit|resource.?exhausted|too many requests|overloaded|\b50[234]\b|timed? ?out|connection (error|reset|aborted)", re.I)
 _TRY_AGAIN = re.compile(r"(?:try again|retry) in ([\d.]+)\s*(ms|s)", re.I)
@@ -48,6 +51,7 @@ class CaseResult:
     answer: Optional[str] = None
     files_changed: list = field(default_factory=list)
     infra_retries: int = 0            # times the case was re-run after provider rate limits / overload
+    output_files: dict = field(default_factory=dict)   # what the agent wrote, kept only when the case failed (scratch dirs are deleted)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -63,6 +67,7 @@ class Runner:
         # deterministic check has failed whatever the judge says, so by default it is not judged.
         self.judge_failed_cases = judge_failed_cases
         self.infra_retries = infra_retries
+        self.stopped_early: Optional[str] = None     # set when the agent's provider hit a limit that won't clear (a daily quota)
         self._sleep = sleep
         self.run_id = run_id or uuid.uuid4().hex[:8]
         self.log = log
@@ -98,7 +103,10 @@ class Runner:
         retries = 0
         while True:
             res = self._run_once(case, attempt)
-            if res.status == "error" and retries < self.infra_retries and is_infrastructure_error(res.error):
+            if res.status == "error" and classify_rate_limit(RuntimeError(res.error))[0] == "daily":
+                # Waiting 20s and trying the next case would just repeat this error for every remaining case.
+                self.stopped_early = res.error[:300]
+            elif res.status == "error" and retries < self.infra_retries and is_infrastructure_error(res.error):
                 wait = retry_wait_seconds(res.error)
                 retries += 1
                 self.log(f"      infrastructure error on {case['id']} ({res.error[:90]}...); retry {retries}/{self.infra_retries} in {wait:.0f}s")
@@ -134,10 +142,12 @@ class Runner:
                 "cost_usd": m.get("cost_usd", 0.0), "retries": m.get("retries", 0), "llm_latency_ms": m.get("latency_ms", 0.0),
                 "integration_fixes": fixes, "per_agent": m.get("per_agent", {})}
 
-    def _finish(self, res: CaseResult, outcomes: list) -> None:
+    def _finish(self, res: CaseResult, outcomes: list, produced: Optional[dict] = None) -> None:
         res.outcomes = [o.to_dict() for o in outcomes]
         failed = [o for o in outcomes if o.required and o.passed is False]
         res.status = "failed" if failed else "passed"
+        if failed and produced:      # a failure you can't inspect can't be diagnosed: the working directory is deleted
+            res.output_files = {p: t[:MAX_KEPT_FILE_CHARS] for p, t in sorted(produced.items())}
 
     def _should_judge(self, case, outcomes) -> Optional[Outcome]:
         """None means 'go ahead and judge'; otherwise the skipped Outcome explaining why not."""
@@ -165,7 +175,7 @@ class Runner:
         res.files_changed = sorted(after)
         outcomes = E.evaluate_project(case, after, None, run_exec=self.run_exec)
         self._judge_code(case, after, None, outcomes)
-        self._finish(res, outcomes)
+        self._finish(res, outcomes, after)
 
     def _editing(self, case, res, session_id):
         collection = self._collection(case["fixture"])
@@ -180,7 +190,7 @@ class Runner:
         res.files_changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
         outcomes = E.evaluate_project(case, after, before, run_exec=self.run_exec)
         self._judge_code(case, after, before, outcomes)
-        self._finish(res, outcomes)
+        self._finish(res, outcomes, {p: after[p] for p in res.files_changed if p in after})
 
     def _qa(self, case, res, session_id):
         collection = self._collection(case["fixture"])
@@ -212,6 +222,8 @@ class Runner:
         n = 0
         for case in cases:
             for attempt in range(1, repeat + 1):
+                if self.stopped_early:
+                    break
                 n += 1
                 r = self.run_case(case, attempt)
                 results.append(r)
@@ -221,6 +233,9 @@ class Runner:
                 tag = {"passed": "PASS", "failed": "FAIL", "error": "ERR "}[r.status]
                 self.log(f"[{n}/{total}] {tag} {r.id}{f' #{attempt}' if repeat > 1 else ''}  {r.seconds:>5.0f}s  "
                          f"calls={r.metrics.get('llm_calls', 0)}  {('failed: ' + ', '.join(bad)) if bad else r.error[:100]}")
+        if self.stopped_early:
+            self.log(f"STOPPED after {len(results)} of {total} run(s): the agent's provider has a limit that will not clear "
+                     f"during this run ({self.stopped_early[:160]}). The remaining cases were not run.")
         return results
 
 

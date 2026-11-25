@@ -405,3 +405,81 @@ def test_the_summary_makes_provider_trouble_visible():
     results = rn.run([CASES["qa-01-todo-storage"]])
     rn.close()
     assert "provider rate limits / overload: 1 retry across 1 case(s)" in R.format_summary(R.summarize(results))
+
+
+# --------------------------------------------- a failure keeps what the agent wrote (scratch dirs are deleted)
+
+def test_a_failed_generation_keeps_the_files_the_agent_wrote():
+    pipe = FakePipeline(generate_fn=lambda c: {"main.py": "def broken(:\n", "README.md": "# hi\n"})
+    rn = R.Runner(pipe, log=lambda *_: None)
+    (r,) = rn.run([CASES["gen-04-wordfreq"]])
+    rn.close()
+    assert r.status == "failed"
+    assert r.output_files["main.py"] == "def broken(:\n" and "README.md" in r.output_files
+    assert r.to_dict()["output_files"]["main.py"] == "def broken(:\n", "it must reach the JSON report"
+
+
+def test_a_failed_edit_keeps_only_the_files_that_changed():
+    case = CASES["edit-04-truncate-bug"]
+    pipe = FakePipeline(edit_fn=lambda c: {"strings.py": "def truncate(:\n"})
+    rn = R.Runner(pipe, log=lambda *_: None)
+    (r,) = rn.run([case])
+    rn.close()
+    assert r.status == "failed" and list(r.output_files) == ["strings.py"]
+
+
+def test_a_passing_case_keeps_no_output():
+    rn = R.Runner(FakePipeline(edit_fn=lambda c: c["solution"]), log=lambda *_: None)
+    (r,) = rn.run([CASES["edit-04-truncate-bug"]])
+    rn.close()
+    assert r.status == "passed" and r.output_files == {}
+
+
+def test_kept_output_is_truncated_per_file():
+    pipe = FakePipeline(generate_fn=lambda c: {"main.py": "x = 1\n" * 20_000})
+    rn = R.Runner(pipe, log=lambda *_: None)
+    (r,) = rn.run([CASES["gen-04-wordfreq"]])
+    rn.close()
+    assert r.status == "failed" and len(r.output_files["main.py"]) == R.MAX_KEPT_FILE_CHARS
+
+
+# ------------------------------------- a daily provider quota stops the run instead of failing every case
+
+REAL_GROQ_DAILY_429 = ("Error code: 429 - {'error': {'message': 'Rate limit reached for model `openai/gpt-oss-120b` in organization `org_x` "
+                       "service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199400, Requested 2098. "
+                       "Please try again in 10m47.136s.', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}")
+
+
+def test_a_daily_token_limit_stops_the_run_without_retrying_or_running_the_rest():
+    """The live repeat run spent ~25 minutes turning 17 cases into identical 429 errors (waiting 20s twice per case)."""
+    sleeps = []
+    pipe = FlakyProvider(failures=99, message=REAL_GROQ_DAILY_429)
+    logs = []
+    rn = R.Runner(pipe, log=logs.append, sleep=sleeps.append)
+    results = rn.run([CASES["qa-01-todo-storage"], CASES["qa-03-todo-auth-unanswerable"], CASES["qa-04-todo-missing-id"]])
+    rn.close()
+    assert [r.status for r in results] == ["error"], "the later cases must not be attempted"
+    assert pipe.attempts == 1 and sleeps == [] and results[0].infra_retries == 0
+    assert "tokens per day" in rn.stopped_early and any("STOPPED after 1 of 3" in m for m in logs)
+
+
+def test_a_per_minute_limit_still_retries_and_does_not_stop_the_run():
+    pipe = FlakyProvider(failures=1)                                  # the per-minute Groq error from earlier tests
+    rn = R.Runner(pipe, log=lambda *_: None, sleep=lambda s: None)
+    results = rn.run([CASES["qa-01-todo-storage"], CASES["qa-03-todo-auth-unanswerable"]])
+    rn.close()
+    assert [r.status for r in results] == ["passed", "passed"] and rn.stopped_early is None
+
+
+def test_the_report_says_when_the_run_stopped_early(tmp_path, monkeypatch):
+    import dotenv
+    import evals.pipeline as P
+
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(P, "LivePipeline", lambda recursion_limit=60: FlakyProvider(failures=99, message=REAL_GROQ_DAILY_429))
+    out = tmp_path / "r.json"
+    run_eval.main(["--case", "qa-01-todo-storage", "--case", "qa-03-todo-auth-unanswerable", "--no-judge", "--out", str(out)])
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert "tokens per day" in report["meta"]["stopped_early"]
+    assert report["meta"]["cases_requested"] == ["qa-01-todo-storage", "qa-03-todo-auth-unanswerable"]
+    assert len(report["cases"]) == 1
