@@ -299,7 +299,7 @@ export function Sidebar({
           <div className="w-8 h-8 shrink-0 flex items-center justify-center">
             <img src="/logo.png" alt="Adra-AI" className="w-8 h-8 rounded-lg object-contain" />
           </div>
-          <Link href="/dashboard" className="text-base font-bold text-white tracking-tight hover:opacity-80 transition-opacity">
+          <Link href="/dashboard" className="text-base font-bold text-fg font-heading tracking-tight hover:opacity-80 transition-opacity">
             Adra-AI
           </Link>
         </div>
@@ -323,7 +323,7 @@ export function Sidebar({
           <div className="mt-2">
             <button
               onClick={toggleProjects}
-              className="sidebar-section-title flex items-center gap-2 w-full hover:text-white transition-colors"
+              className="sidebar-section-title flex items-center gap-2 w-full hover:text-fg transition-colors"
             >
               <ChevronIcon open={projectsOpen} />
               Projects
@@ -360,7 +360,7 @@ export function Sidebar({
         <div className="mt-2">
           <button
             onClick={toggleRepos}
-            className="sidebar-section-title flex items-center gap-2 w-full hover:text-white transition-colors"
+            className="sidebar-section-title flex items-center gap-2 w-full hover:text-fg transition-colors"
           >
             <ChevronIcon open={reposOpen} />
             Repositories
@@ -405,18 +405,18 @@ export function Sidebar({
         <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-[var(--bg-hover)] transition-colors group cursor-default">
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold"
-            style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid rgba(99,102,241,0.3)' }}
+            style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid var(--border-hover)' }}
           >
             {user?.name?.[0]?.toUpperCase() || 'U'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-white truncate">{user?.name || 'User'}</p>
+            <p className="text-xs font-medium text-fg truncate">{user?.name || 'User'}</p>
             <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{user?.email || ''}</p>
           </div>
           <button
             onClick={handleLogout}
             title="Sign out"
-            className="p-1.5 rounded-lg hover:bg-[var(--bg-active)] transition-colors hover:text-red-400"
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-active)] transition-colors hover:text-danger"
             style={{ color: 'var(--text-secondary)' }}
           >
             <LogoutIcon />

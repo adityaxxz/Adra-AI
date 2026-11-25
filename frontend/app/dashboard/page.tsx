@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { projectsAPI, repositoriesAPI } from '../../api-client';
 import { Sidebar } from '../../components/Sidebar';
 import { LoadingScreen } from '../../components/LoadingScreen';
+import { ThemeToggle } from '../../components/ThemeToggle';
 
 interface Project {
   id: string;
@@ -162,17 +163,18 @@ export default function Dashboard() {
         <header
           className="sticky top-0 z-30 flex items-center justify-between px-8 py-4 border-b"
           style={{
-            background: 'rgba(10,10,15,0.85)',
+            background: 'var(--nav-bg)',
             backdropFilter: 'blur(16px)',
             borderColor: 'var(--border)',
           }}
         >
           <div>
-            <h1 className="text-xl font-bold text-white">Dashboard</h1>
+            <h1 className="text-xl font-bold text-fg">Dashboard</h1>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Manage your projects and repositories
             </p>
           </div>
+          <ThemeToggle />
         </header>
 
         <div className="flex-1 px-8 py-8 max-w-6xl mx-auto w-full">
@@ -187,16 +189,16 @@ export default function Dashboard() {
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 transition-colors"
                 style={{
-                  background: 'rgba(99,102,241,0.1)',
-                  border: '1px solid rgba(99,102,241,0.2)',
-                  color: '#818cf8',
+                  background: 'var(--accent-light)',
+                  border: '1px solid var(--border-hover)',
+                  color: 'var(--accent)',
                 }}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h3 className="text-base font-semibold text-white mb-1.5">Generate New Project</h3>
+              <h3 className="text-base font-semibold text-fg mb-1.5">Generate New Project</h3>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 Describe your idea in plain English and our Agents will scaffold a complete application.
               </p>
@@ -211,9 +213,9 @@ export default function Dashboard() {
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
                 style={{
-                  background: 'rgba(96,165,250,0.1)',
-                  border: '1px solid rgba(96,165,250,0.2)',
-                  color: '#60a5fa',
+                  background: 'var(--info-bg)',
+                  border: '1px solid var(--info-border)',
+                  color: 'var(--info)',
                 }}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -221,7 +223,7 @@ export default function Dashboard() {
                     d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
               </div>
-              <h3 className="text-base font-semibold text-white mb-1.5">Add Repository</h3>
+              <h3 className="text-base font-semibold text-fg mb-1.5">Add Repository</h3>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 Import a local folder or GitHub repository to chat with and edit using our Agents
               </p>
@@ -231,8 +233,8 @@ export default function Dashboard() {
           {/* Projects section */}
           <section className="mb-10">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <svg className="w-4 h-4" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <h2 className="text-base font-semibold text-fg flex items-center gap-2">
+                <svg className="w-4 h-4" style={{ color: 'var(--accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
@@ -274,7 +276,7 @@ export default function Dashboard() {
                     <div className="flex items-start justify-between">
                       <div
                         className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8' }}
+                        style={{ background: 'var(--accent-light)', border: '1px solid var(--border-hover)', color: 'var(--accent)' }}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -284,7 +286,7 @@ export default function Dashboard() {
                       <StatusBadge status={project.status} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-white truncate mb-1">{project.name}</h3>
+                      <h3 className="text-sm font-semibold text-fg truncate mb-1">{project.name}</h3>
                       {project.description && (
                         <p className="text-xs leading-relaxed line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
                           {project.description}
@@ -303,8 +305,8 @@ export default function Dashboard() {
           {/* Repositories section */}
           <section>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <svg className="w-4 h-4" style={{ color: '#60a5fa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <h2 className="text-base font-semibold text-fg flex items-center gap-2">
+                <svg className="w-4 h-4" style={{ color: 'var(--info)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
@@ -345,7 +347,7 @@ export default function Dashboard() {
                   >
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa' }}
+                      style={{ background: 'var(--info-bg)', border: '1px solid var(--info-border)', color: 'var(--info)' }}
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -353,7 +355,7 @@ export default function Dashboard() {
                       </svg>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-white truncate mb-0.5">{repo.name}</h3>
+                      <h3 className="text-sm font-semibold text-fg truncate mb-0.5">{repo.name}</h3>
                       <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                         {repo.provider === 'generated' ? 'From a generated project' : repo.provider === 'local' ? repo.local_path : repo.url}
                       </p>
@@ -382,7 +384,7 @@ export default function Dashboard() {
         <div className="modal-overlay" onClick={() => setShowNewProject(false)}>
           <div className="modal-content animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold text-white">Create New Project</h2>
+              <h2 className="text-lg font-bold text-fg">Create New Project</h2>
               <button
                 onClick={() => setShowNewProject(false)}
                 className="btn-ghost p-2 rounded-lg"
@@ -457,7 +459,7 @@ export default function Dashboard() {
         <div className="modal-overlay" onClick={() => setShowNewRepo(false)}>
           <div className="modal-content animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold text-white">Add Repository</h2>
+              <h2 className="text-lg font-bold text-fg">Add Repository</h2>
               <button
                 onClick={() => setShowNewRepo(false)}
                 className="btn-ghost p-2 rounded-lg"

@@ -76,12 +76,12 @@ export const ProjectDirectoryViewer: React.FC<ProjectDirectoryViewerProps> = ({
         return (
           <div key={node.path}>
             <div
-              className="flex items-center py-1 px-2 hover:bg-zinc-800/50 cursor-pointer rounded"
+              className="flex items-center py-1 px-2 hover:bg-subtle cursor-pointer rounded"
               style={{ paddingLeft: `${paddingLeft + 8}px` }}
               onClick={() => toggleDirectory(node.path)}
             >
               <svg
-                className={`w-4 h-4 mr-2 text-zinc-500 transition-transform ${
+                className={`w-4 h-4 mr-2 text-fg-muted transition-transform ${
                   isExpanded ? 'rotate-90' : ''
                 }`}
                 fill="none"
@@ -98,7 +98,7 @@ export const ProjectDirectoryViewer: React.FC<ProjectDirectoryViewerProps> = ({
               <svg className="w-4 h-4 mr-2 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
               </svg>
-              <span className="text-sm text-zinc-300">{node.name}</span>
+              <span className="text-sm text-fg-secondary">{node.name}</span>
             </div>
             {isExpanded && node.children && (
               <div>{renderFileTree(Object.values(node.children), depth + 1)}</div>
@@ -109,7 +109,7 @@ export const ProjectDirectoryViewer: React.FC<ProjectDirectoryViewerProps> = ({
         return (
           <div
             key={node.path}
-            className="flex items-center py-1 px-2 hover:bg-zinc-800/50 cursor-pointer rounded"
+            className="flex items-center py-1 px-2 hover:bg-subtle cursor-pointer rounded"
             style={{ paddingLeft: `${paddingLeft + 32}px` }}
             onClick={() => onFileClick?.(node.path, files[node.path])}
           >
@@ -121,7 +121,7 @@ export const ProjectDirectoryViewer: React.FC<ProjectDirectoryViewerProps> = ({
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
-            <span className="text-sm text-zinc-400">{node.name}</span>
+            <span className="text-sm text-fg-muted">{node.name}</span>
           </div>
         );
       }
@@ -133,7 +133,7 @@ export const ProjectDirectoryViewer: React.FC<ProjectDirectoryViewerProps> = ({
   return (
     <div className={`project-directory-viewer ${className}`}>
       {fileTree.length === 0 ? (
-        <div className="text-center py-8 text-zinc-500">
+        <div className="text-center py-8 text-fg-muted">
           <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"

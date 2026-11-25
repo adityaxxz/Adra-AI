@@ -58,21 +58,20 @@ function GoogleCallbackContent() {
   if (status !== 'error') return <LoadingScreen label="Loading dashboard…" />;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#09090b] relative overflow-hidden select-none cursor-default">
+    <div className="min-h-screen flex items-center justify-center bg-canvas relative overflow-hidden select-none cursor-default">
       {/* Background gradient effect */}
-      <div className="absolute inset-0 bg-gradient-to-b from-indigo-600/5 via-transparent to-transparent"></div>
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-600/10 rounded-full blur-[120px]"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] rounded-full blur-[120px]" style={{ background: 'var(--hero-glow)' }}></div>
 
       <div className="card p-8 max-w-md w-full mx-4 relative z-10">
         <div className="text-center">
-          <div className="text-red-500 text-5xl mb-4">✕</div>
-          <h2 className="text-xl font-semibold text-white mb-2">
+          <div className="text-danger text-5xl mb-4">✕</div>
+          <h2 className="text-xl font-semibold text-fg mb-2">
             Authentication Failed
           </h2>
-          <p className="text-zinc-400 text-sm mb-4">{error}</p>
+          <p className="text-fg-secondary text-sm mb-4">{error}</p>
           <button
             onClick={() => router.push('/auth/signin')}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white font-medium rounded-lg transition-all duration-200"
+            className="btn-primary"
           >
             Try Again
           </button>

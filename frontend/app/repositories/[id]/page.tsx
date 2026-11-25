@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { repositoriesAPI, generationAPI, projectsAPI, feedbackAPI, editsAPI } from '../../../api-client';
 import { saveBlob, zipName } from '../../../lib/downloadBlob';
+import HoldButton from '../../../components/HoldButton';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 import { Sidebar } from '../../../components/Sidebar';
@@ -97,7 +98,6 @@ function RepositoryPageInner() {
   const [progressText, setProgressText] = useState<string | null>(null);
   const lastRequestRef = useRef<{ prompt: string; mode: Mode } | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -547,13 +547,14 @@ function RepositoryPageInner() {
   };
 
   const confirmDeleteAction = async () => {
-    if (!repository || deleteConfirmName !== repository.name) return;
+    if (!repository) return;
     try {
       await repositoriesAPI.deleteRepository(repositoryId);
       router.push('/dashboard');
     } catch (error) {
       console.error(error);
       alert('Failed to delete repository.');
+      setDeleteConfirmOpen(false);
     }
   };
 
@@ -629,7 +630,7 @@ function RepositoryPageInner() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
         <div className="text-center">
-          <h1 className="text-xl font-bold text-white mb-3">Repository Not Found</h1>
+          <h1 className="text-xl font-bold text-fg mb-3">Repository Not Found</h1>
           <Link href="/dashboard" className="btn-primary text-sm">Back to Dashboard</Link>
         </div>
       </div>
@@ -657,7 +658,7 @@ function RepositoryPageInner() {
         <header
           className="shrink-0 flex items-center gap-4 px-6 py-3.5 border-b"
           style={{
-            background: 'rgba(10,10,15,0.85)',
+            background: 'var(--nav-bg)',
             backdropFilter: 'blur(16px)',
             borderColor: 'var(--border)',
           }}
@@ -670,7 +671,7 @@ function RepositoryPageInner() {
 
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8' }}
+            style={{ background: 'var(--accent-light)', border: '1px solid var(--border-hover)', color: 'var(--accent)' }}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -679,7 +680,7 @@ function RepositoryPageInner() {
           </div>
 
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-white truncate">{repository.name}</h1>
+            <h1 className="text-sm font-semibold text-fg truncate">{repository.name}</h1>
             <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
               {currentSession.title !== 'New Chat' ? currentSession.title : (repository.provider === 'local' ? 'Local folder' : repository.url)}
             </p>
@@ -693,7 +694,7 @@ function RepositoryPageInner() {
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 ${
                   showDirectory
                     ? 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-700'
-                    : 'bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white'
+                    : 'bg-accent-soft border-[var(--border-hover)] hover:border-accent text-accent'
                 }`}
                 id="toggle-file-tree"
               >
@@ -710,7 +711,7 @@ function RepositoryPageInner() {
               <button
                 onClick={handleDownload}
                 disabled={downloading}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white disabled:opacity-60 disabled:cursor-wait"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-accent-soft border-[var(--border-hover)] hover:border-accent text-accent disabled:opacity-60 disabled:cursor-wait"
                 title="Download the current project files as a ZIP"
                 id="download-repo-btn"
               >
@@ -725,7 +726,7 @@ function RepositoryPageInner() {
             {/* Delete */}
             <button
               onClick={handleDelete}
-              className="p-2 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all duration-200"
+              className="p-2 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] hover:border-[var(--danger)] text-danger transition-all duration-200"
               title="Delete repository"
               id="delete-repo-btn"
             >
@@ -741,13 +742,13 @@ function RepositoryPageInner() {
         {(isIndexing || !repository.is_indexed) && (
           <div
             className="shrink-0 px-6 py-3 border-b flex items-center gap-4"
-            style={{ background: 'rgba(99,102,241,0.05)', borderColor: 'rgba(99,102,241,0.15)' }}
+            style={{ background: 'var(--accent-light)', borderColor: 'var(--accent-light)' }}
           >
             <div className="w-5 h-5 rounded-full border-2 border-t-indigo-400 border-indigo-400/20 animate-spin shrink-0" />
             <div className="flex-1 min-w-0">
               {isIndexing ? (
                 <div>
-                  <p className="text-xs font-medium" style={{ color: '#818cf8' }}>Indexing repository…</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--accent)' }}>Indexing repository…</p>
                   {latestMessage && (
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                       {latestMessage.step === 'scanning' && 'Scanning files…'}
@@ -760,7 +761,7 @@ function RepositoryPageInner() {
                     </p>
                   )}
                   {latestMessage?.progress !== undefined && (
-                    <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(99,102,241,0.15)' }}>
+                    <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'var(--accent-light)' }}>
                       <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{ background: 'var(--accent)', width: `${latestMessage.progress}%` }}
@@ -771,7 +772,7 @@ function RepositoryPageInner() {
               ) : (
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   This repository hasn't been indexed yet.{' '}
-                  <button onClick={handleStartIndexing} className="text-indigo-400 hover:text-indigo-300 underline">
+                  <button onClick={handleStartIndexing} className="text-accent hover:underline underline">
                     Start indexing
                   </button>
                 </p>
@@ -792,7 +793,7 @@ function RepositoryPageInner() {
           >
             <div className="px-6 py-3 flex items-center justify-between sticky top-0 z-10"
               style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
-              <h3 className="text-xs font-semibold text-white flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-fg flex items-center gap-2">
                 <svg className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -827,14 +828,14 @@ function RepositoryPageInner() {
               <div className="flex flex-col items-center justify-center h-full text-center pb-20 animate-fade-in">
                 <div
                   className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-                  style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)' }}
+                  style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-light)' }}
                 >
-                  <svg className="w-8 h-8" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-8 h-8" style={{ color: 'var(--accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
                 </div>
-                <h2 className="text-lg font-semibold text-white mb-2">{repository.name}</h2>
+                <h2 className="text-lg font-semibold text-fg mb-2">{repository.name}</h2>
                 <p className="text-sm max-w-sm" style={{ color: 'var(--text-secondary)' }}>
                   {!isReady
                     ? 'Repository is being indexed. You can chat once indexing is complete.'
@@ -921,7 +922,7 @@ function RepositoryPageInner() {
                 {isReady && (
                   <div
                     className="flex rounded-xl p-0.5 gap-0.5 shrink-0"
-                    style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)' }}
+                    style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}
                   >
                     {(['ask', 'editor'] as Mode[]).map((m) => (
                       <button
@@ -931,8 +932,8 @@ function RepositoryPageInner() {
                         id={`mode-${m}`}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                         style={{
-                          background: mode === m ? 'var(--accent)' : 'transparent',
-                          color: mode === m ? '#fff' : 'var(--text-muted)',
+                          background: mode === m ? 'var(--accent-solid)' : 'transparent',
+                          color: mode === m ? 'var(--on-accent)' : 'var(--text-muted)',
                         }}
                       >
                         {m === 'ask' ? 'Ask' : 'Edit'}
@@ -967,8 +968,8 @@ function RepositoryPageInner() {
                   disabled={isProcessing || !input.trim() || !isReady}
                   className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all"
                   style={{
-                    background: (isProcessing || !input.trim() || !isReady) ? 'var(--bg-active)' : 'var(--accent)',
-                    color: (isProcessing || !input.trim() || !isReady) ? 'var(--text-muted)' : '#fff',
+                    background: (isProcessing || !input.trim() || !isReady) ? 'var(--bg-active)' : 'var(--accent-solid)',
+                    color: (isProcessing || !input.trim() || !isReady) ? 'var(--text-muted)' : 'var(--on-accent)',
                   }}
                   id="send-btn"
                 >
@@ -995,7 +996,7 @@ function RepositoryPageInner() {
               className="flex items-center justify-between px-5 py-4 border-b shrink-0"
               style={{ borderColor: 'var(--border)' }}
             >
-              <span className="text-sm font-mono font-semibold truncate" style={{ color: '#818cf8' }}>{selectedFile}</span>
+              <span className="text-sm font-mono font-semibold truncate" style={{ color: 'var(--accent)' }}>{selectedFile}</span>
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 <button
                   onClick={async () => {
@@ -1005,7 +1006,7 @@ function RepositoryPageInner() {
                       setTimeout(() => setCopied(false), 2000);
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-accent-soft border-[var(--border-hover)] hover:border-accent text-accent"
                 >
                   {copied ? (
                     <>
@@ -1036,7 +1037,7 @@ function RepositoryPageInner() {
               </div>
             </div>
             <div className="flex-1 overflow-auto p-5">
-              <pre className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>
+              <pre className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>
                 {selectedFileContent || '(Binary file)'}
               </pre>
             </div>
@@ -1046,16 +1047,16 @@ function RepositoryPageInner() {
 
       {/* ---- GitHub-like Delete Confirmation Modal ---- */}
       {deleteConfirmOpen && (
-          <div className="modal-overlay" onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}>
+          <div className="modal-overlay" onClick={() => { setDeleteConfirmOpen(false); }}>
             <div
               className="w-full max-w-md rounded-2xl overflow-hidden animate-scale-in"
               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
-                <span className="text-sm font-semibold text-white">Delete Repository</span>
+                <span className="text-sm font-semibold text-fg">Delete Repository</span>
                 <button
-                  onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}
+                  onClick={() => { setDeleteConfirmOpen(false); }}
                   className="btn-ghost p-2 rounded-lg"
                   style={{ color: 'var(--text-muted)' }}
                 >
@@ -1065,46 +1066,37 @@ function RepositoryPageInner() {
                 </button>
               </div>
               <div className="p-5 flex-1 space-y-4">
-                <p className="text-xs leading-relaxed text-[#6b6b80]">
-                  <span className="text-red-400">This action cannot  be undone.</span> <span className="text-white">This will permanently delete this repository, including all its indexes, files, and chat logs.</span>
+                <p className="text-xs leading-relaxed text-fg-secondary">
+                  <span className="text-danger">This action cannot  be undone.</span> <span className="text-fg">This will permanently delete this repository, including all its indexes, files, and chat logs.</span>
                 </p>
-                
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-white select-text">
-                    Please type "<strong className="text-[#818cf8]">{repository.name}</strong>" to confirm:
-                  </label>
-                  <input
-                    type="text"
-                    autoFocus
-                    value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
-                    className="w-full text-xs px-3.5 py-2.5 rounded-lg border focus:outline-none transition-all duration-150"
-                    style={{
-                      background: '#090910',
-                      borderColor: 'var(--border)',
-                      color: '#fff',
-                    }}
-                  />
-                </div>
               </div>
-              <div className="px-5 py-4 border-t flex justify-end gap-3" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.01)' }}>
+              <div className="px-5 py-4 border-t flex justify-end gap-3" style={{ borderColor: 'var(--border)', background: 'transparent' }}>
                 <button
-                  onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}
+                  onClick={() => { setDeleteConfirmOpen(false); }}
                   className="btn-ghost text-xs px-4 py-2 rounded-lg"
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={confirmDeleteAction}
-                  disabled={deleteConfirmName !== repository.name}
-                  className={`text-xs px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
-                    deleteConfirmName === repository.name
-                      ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
-                      : 'bg-red-950/20 border border-red-500/20 text-red-500/35 cursor-not-allowed'
-                  }`}
+                <HoldButton
+                  doneLabel="Deleting…"
+                  backgroundColor="var(--bg-hover)"
+                  fillColor="#e41823"
+                  textColor="var(--text-primary)"
+                  fillTextColor="#ffffff"
+                  size="sm"
+                  radius={10}
+                  fillDirection="right"
+                  holdTime={2500}
+                  releaseTime={200}
+                  pressScale={0.97}
+                  wave
+                  waveAmplitude={6}
+                  glow
+                  resetAfter={0}
+                  onHold={confirmDeleteAction}
                 >
-                  I understand, delete
-                </button>
+                  Hold to delete
+                </HoldButton>
               </div>
             </div>
           </div>

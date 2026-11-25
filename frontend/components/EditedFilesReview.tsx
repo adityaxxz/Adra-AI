@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useTheme } from '../lib/theme';
 
 // Monaco is large; load it only when a diff is first opened, and never on the server.
 const DiffEditor = dynamic(() => import('@monaco-editor/react').then(m => m.DiffEditor), {
@@ -72,6 +73,7 @@ function ActionButton({ label, color, disabled, onClick }: {
 }
 
 export function EditedFilesReview({ editedFiles, originalFiles, review, onResolve }: Props) {
+  const theme = useTheme();
   const paths = Object.keys(editedFiles);
   const [open, setOpen] = useState<Set<string>>(() => new Set(paths.length === 1 ? paths : []));
   const [sideBySide, setSideBySide] = useState(false);
@@ -131,13 +133,13 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
   return (
     <div
       className="rounded-xl overflow-hidden text-xs"
-      style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', maxWidth: '100%', minWidth: 'min(640px, 80vw)' }}
+      style={{ background: 'var(--accent-light)', border: '1px solid var(--border-hover)', maxWidth: '100%', minWidth: 'min(640px, 80vw)' }}
     >
       <div
         className="flex items-center gap-2 px-4 py-2.5"
-        style={{ borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(99,102,241,0.08)' }}
+        style={{ borderBottom: '1px solid var(--accent-light)', background: 'var(--accent-light)' }}
       >
-        <span className="font-semibold" style={{ color: '#a5b4fc' }}>
+        <span className="font-semibold" style={{ color: 'var(--accent)' }}>
           Edited {paths.length} file{paths.length !== 1 ? 's' : ''}
         </span>
         <span style={{ color: 'var(--text-muted)' }}>
@@ -155,9 +157,9 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
           </button>
           {pending.length > 1 && (
             <>
-              <ActionButton label="Reject all" color="#f87171" disabled={busy}
+              <ActionButton label="Reject all" color="var(--danger)" disabled={busy}
                 onClick={() => resolve([], pending.filter(canReject))} />
-              <ActionButton label="Accept all" color="#4ade80" disabled={busy}
+              <ActionButton label="Accept all" color="var(--success)" disabled={busy}
                 onClick={() => resolve(pending, [])} />
             </>
           )}
@@ -165,7 +167,7 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
       </div>
 
       {(error || skipped.length > 0) && (
-        <div className="px-4 py-2" role="alert" style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
+        <div className="px-4 py-2" role="alert" style={{ color: 'var(--warning)', background: 'var(--warning-bg)' }}>
           {error ?? `Left as is because a later change touched them: ${skipped.join(', ')}`}
         </div>
       )}
@@ -181,31 +183,31 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
             <div key={p} className="rounded-lg overflow-hidden"
               style={{ background: 'var(--bg-base)', border: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2 px-3 py-2"
-                style={{ background: 'rgba(255,255,255,0.03)', borderBottom: isOpen ? '1px solid var(--border)' : 'none' }}>
+                style={{ background: 'var(--bg-hover)', borderBottom: isOpen ? '1px solid var(--border)' : 'none' }}>
                 <button type="button" onClick={() => toggle(p)} className="flex items-center gap-2 min-w-0 flex-1 text-left"
                   aria-expanded={isOpen}>
                   <span style={{ color: 'var(--text-muted)' }}>{isOpen ? '▾' : '▸'}</span>
-                  <span className="font-mono font-semibold truncate" style={{ color: '#818cf8' }}>{p}</span>
+                  <span className="font-mono font-semibold truncate" style={{ color: 'var(--accent)' }}>{p}</span>
                   {originalFiles[p] === null && (
-                    <span className="px-1.5 rounded" style={{ color: '#4ade80', background: 'rgba(74,222,128,0.1)' }}>new</span>
+                    <span className="px-1.5 rounded" style={{ color: 'var(--success)', background: 'var(--success-bg)' }}>new</span>
                   )}
                   {c && (
                     <span className="font-mono shrink-0">
-                      <span style={{ color: '#4ade80' }}>+{c.added}</span>{' '}
-                      <span style={{ color: '#f87171' }}>−{c.removed}</span>
+                      <span style={{ color: 'var(--success)' }}>+{c.added}</span>{' '}
+                      <span style={{ color: 'var(--danger)' }}>−{c.removed}</span>
                     </span>
                   )}
                 </button>
                 {status === 'pending' ? (
                   <div className="flex items-center gap-1.5 shrink-0">
                     {canReject(p) && (
-                      <ActionButton label="Reject" color="#f87171" disabled={busy} onClick={() => resolve([], [p])} />
+                      <ActionButton label="Reject" color="var(--danger)" disabled={busy} onClick={() => resolve([], [p])} />
                     )}
-                    <ActionButton label="Accept" color="#4ade80" disabled={busy} onClick={() => resolve([p], [])} />
+                    <ActionButton label="Accept" color="var(--success)" disabled={busy} onClick={() => resolve([p], [])} />
                   </div>
                 ) : (
                   <span className="shrink-0 font-medium"
-                    style={{ color: status === 'accepted' ? '#4ade80' : '#f87171' }}>
+                    style={{ color: status === 'accepted' ? 'var(--success)' : 'var(--danger)' }}>
                     {status === 'accepted' ? '✓ Accepted' : '✕ Rejected'}
                   </span>
                 )}
@@ -214,7 +216,7 @@ export function EditedFilesReview({ editedFiles, originalFiles, review, onResolv
                 <DiffEditor
                   height={heights[p] ?? Math.min(Math.max(lines * 19 + 24, 120), 420)}
                   language={languageOf(p)}
-                  theme="vs-dark"
+                  theme={theme === 'light' ? 'vs' : 'vs-dark'}
                   original={original}
                   modified={drafts[p] ?? editedFiles[p] ?? ''}
                   onMount={editor => {

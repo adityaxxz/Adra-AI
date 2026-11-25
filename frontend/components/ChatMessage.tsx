@@ -52,7 +52,7 @@ function parseMarkdown(content: string): string {
       result.push(
         `<div class="chat-code-block">` +
           `<div class="chat-code-header"><span>${codeLang || 'code'}</span></div>` +
-          `<pre style="padding:1rem;margin:0;overflow-x:auto;"><code style="font-family:monospace;font-size:1em;color:#e2e8f0;">${escaped}</code></pre>` +
+          `<pre style="padding:1rem;margin:0;overflow-x:auto;"><code style="font-family:monospace;font-size:1em;color:var(--code-fg);">${escaped}</code></pre>` +
         `</div>`
       );
       continue;
@@ -65,11 +65,11 @@ function parseMarkdown(content: string): string {
 
     // Headings
     if (line.startsWith('### ')) {
-      result.push(`<h3 style="font-weight:600;font-size:0.95em;color:#fff;margin:0.75rem 0 0.35rem;">${parseInlineMarkdown(line.slice(4))}</h3>`);
+      result.push(`<h3 style="font-weight:600;font-size:0.95em;color:var(--text-primary);margin:0.75rem 0 0.35rem;">${parseInlineMarkdown(line.slice(4))}</h3>`);
     } else if (line.startsWith('## ')) {
-      result.push(`<h2 style="font-weight:600;font-size:1.05em;color:#fff;margin:0.75rem 0 0.35rem;">${parseInlineMarkdown(line.slice(3))}</h2>`);
+      result.push(`<h2 style="font-weight:600;font-size:1.05em;color:var(--text-primary);margin:0.75rem 0 0.35rem;">${parseInlineMarkdown(line.slice(3))}</h2>`);
     } else if (line.startsWith('# ')) {
-      result.push(`<h1 style="font-weight:700;font-size:1.1em;color:#fff;margin:0.75rem 0 0.35rem;">${parseInlineMarkdown(line.slice(2))}</h1>`);
+      result.push(`<h1 style="font-weight:700;font-size:1.1em;color:var(--text-primary);margin:0.75rem 0 0.35rem;">${parseInlineMarkdown(line.slice(2))}</h1>`);
     }
     // Horizontal rule
     else if (line.match(/^[-*_]{3,}$/)) {
@@ -87,7 +87,7 @@ function parseMarkdown(content: string): string {
     // Blockquote
     else if (line.startsWith('> ')) {
       result.push(
-        `<blockquote style="border-left:3px solid rgba(99,102,241,0.5);padding-left:0.75rem;margin:0.5rem 0;color:var(--text-secondary);">${parseInlineMarkdown(line.slice(2))}</blockquote>`
+        `<blockquote style="border-left:3px solid var(--border-active);padding-left:0.75rem;margin:0.5rem 0;color:var(--text-secondary);">${parseInlineMarkdown(line.slice(2))}</blockquote>`
       );
     }
     // Empty line
@@ -111,7 +111,7 @@ function UserAvatar({ name }: { name?: string }) {
   return (
     <div
       className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold"
-      style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid rgba(99,102,241,0.3)' }}
+      style={{ background: 'var(--accent-light)', color: 'var(--text-accent)', border: '1px solid var(--border-hover)' }}
     >
       {name?.[0]?.toUpperCase() || 'U'}
     </div>
@@ -156,7 +156,7 @@ function RatingButtons({ rating, onRate }: { rating?: 'up' | 'down'; onRate: (r:
         disabled={pending}
         onClick={() => rate(value)}
         className="p-1 rounded-md transition-colors disabled:opacity-50"
-        style={{ color: active ? '#818cf8' : 'var(--text-muted)', background: active ? 'rgba(99,102,241,0.15)' : 'transparent' }}
+        style={{ color: active ? 'var(--accent)' : 'var(--text-muted)', background: active ? 'var(--accent-light)' : 'transparent' }}
       >
         <svg className="w-3.5 h-3.5" fill={active ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={path} />
@@ -170,7 +170,7 @@ function RatingButtons({ rating, onRate }: { rating?: 'up' | 'down'; onRate: (r:
       {button('up', 'Good response', 'M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3')}
       {button('down', 'Bad response', 'M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zM17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17')}
       {failed && (
-        <span className="text-[10px]" role="alert" style={{ color: '#f87171' }}>
+        <span className="text-[10px]" role="alert" style={{ color: 'var(--danger)' }}>
           Couldn't save your rating
         </span>
       )}
@@ -218,20 +218,20 @@ export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = tru
           <div
             className="rounded-xl overflow-hidden text-xs"
             style={{
-              background: 'rgba(99,102,241,0.05)',
-              border: '1px solid rgba(99,102,241,0.2)',
+              background: 'var(--accent-light)',
+              border: '1px solid var(--border-hover)',
               maxWidth: '100%',
             }}
           >
             <div
               className="flex items-center gap-2 px-4 py-2.5"
-              style={{ borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(99,102,241,0.08)' }}
+              style={{ borderBottom: '1px solid var(--accent-light)', background: 'var(--accent-light)' }}
             >
-              <svg className="w-3.5 h-3.5" style={{ color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-              <span className="font-semibold" style={{ color: '#a5b4fc' }}>
+              <span className="font-semibold" style={{ color: 'var(--accent)' }}>
                 Edited {Object.keys(message.editedFiles!).length} file{Object.keys(message.editedFiles!).length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -244,22 +244,22 @@ export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = tru
                 >
                   <div
                     className="flex items-center justify-between px-3 py-2"
-                    style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.03)' }}
+                    style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-hover)' }}
                   >
-                    <span className="font-mono font-semibold truncate" style={{ color: '#818cf8', maxWidth: '70%' }}>
+                    <span className="font-mono font-semibold truncate" style={{ color: 'var(--accent)', maxWidth: '70%' }}>
                       {filePath}
                     </span>
                     {onOpenFile && (
                       <button
                         onClick={() => onOpenFile(filePath, content)}
-                        className="shrink-0 hover:text-indigo-300 transition-colors ml-2"
+                        className="shrink-0 hover:text-accent transition-colors ml-2"
                         style={{ color: 'var(--text-muted)' }}
                       >
                         Open ↗
                       </button>
                     )}
                   </div>
-                  <pre className="p-3 text-xs leading-relaxed overflow-auto max-h-48 whitespace-pre-wrap" style={{ color: '#cbd5e1' }}>
+                  <pre className="p-3 text-xs leading-relaxed overflow-auto max-h-48 whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
                     {content || '(empty)'}
                   </pre>
                 </div>
@@ -279,7 +279,7 @@ export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = tru
           {!isUser && message.retry && onRetry && (
             <button
               onClick={onRetry}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-all duration-200 bg-accent-soft border-[var(--border-hover)] hover:border-accent text-accent"
               id="retry-btn"
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
