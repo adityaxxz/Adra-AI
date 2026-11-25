@@ -75,6 +75,31 @@ Reads **only that user's** runs from `agent_runs` (an explicit email is required
 content) and writes `evals/datasets/seed_candidates.yaml` (gitignored, never loaded by the suite).
 Review each candidate, give it a fixture/expectations, and move it into a dataset file.
 
+## The quality gate in CI (§2.4 "Regression gate in CI")
+
+`.github/workflows/evals.yml` runs the real agents on all 15 cases and compares the result with a saved good run,
+`evals/baselines/reference.json`. It is **manual only**: open the repository's **Actions** tab, pick **Evals (quality gate)**,
+press **Run workflow**. One run costs ~92k Groq tokens (nearly half of a free key's day), ~14 Flash-Lite judge calls, ~40 minutes.
+
+- **Green**: no more than 2 fewer cases passed than in the reference (AI output varies run to run, so 1-2 is normal wobble).
+- **Red, "REGRESSION"**: more than 2 fewer passed. The log lists which cases now fail; the full report is attached as the
+  `eval-report` artifact (failed cases include the files the agent wrote).
+- **Red, "INCONCLUSIVE"**: the run can't be compared - it stopped on a quota, some cases couldn't be judged, it used a
+  different judge or case set than the reference. Re-run later; it is not a verdict on the agents.
+
+**One-time setup:** in GitHub, Settings -> Secrets and variables -> Actions -> New repository secret, add `GROQ_API_KEY_TEST`
+(a Groq key used only for evals) and `GOOGLE_API_KEY`. They are never written into code or reports.
+
+**Updating the reference** (after a change that is meant to move the numbers, e.g. a better prompt, or after adding cases):
+
+```bash
+python -m evals.run_eval --exec --judge-model gemini-2.5-flash-lite --min-interval 20 --write-baseline evals/baselines/reference.json
+```
+
+then commit `evals/baselines/reference.json`. A run that stopped early or left cases unjudged is refused as a reference.
+The same comparison works locally: add `--baseline evals/baselines/reference.json` to any full run (exit 1 = regression,
+2 = can't compare).
+
 ## Caveats
 
 - Agents run at temperature 0 but are still non-deterministic; use `--repeat` before trusting a small difference.

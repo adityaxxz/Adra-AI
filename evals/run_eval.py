@@ -59,6 +59,9 @@ def main(argv=None) -> int:
     ap.add_argument("--label", default="run")
     ap.add_argument("--out", help="report path (default: evals/reports/<timestamp>-<label>.json)")
     ap.add_argument("--min-pass-rate", type=float, help="exit 1 if the overall pass rate is below this (0-1)")
+    ap.add_argument("--baseline", help="compare with this saved reference run (exit 1 = regression, 2 = can't compare)")
+    ap.add_argument("--max-drop", type=int, default=2, help="with --baseline: how many fewer passing cases are tolerated (default 2)")
+    ap.add_argument("--write-baseline", help="save this run as the reference at this path (e.g. evals/baselines/reference.json)")
     args = ap.parse_args(argv)
 
     # Line-buffered, so progress is visible while it runs and a killed run loses nothing already printed.
@@ -129,11 +132,28 @@ def main(argv=None) -> int:
     if runner.stopped_early:
         print(f"\nWARNING: stopped early - {runner.stopped_early[:200]}. The remaining cases were NOT run; this is not a full result.")
     print(f"\nreport: {out}")
+    code = 0
+    if args.write_baseline:
+        from evals.baseline import run_problems, write_baseline
+
+        blockers = run_problems(report)
+        if blockers:
+            print("NOT saved as the reference, because: " + "; ".join(blockers))
+            code = 2
+        else:
+            saved = write_baseline(report, args.write_baseline)
+            print(f"saved as the reference: {args.write_baseline} ({saved['passed']}/{saved['total']} passed)")
+    if args.baseline:
+        from evals.baseline import EXIT_CODES, compare
+
+        verdict, lines = compare(report, json.loads(Path(args.baseline).read_text(encoding="utf-8")), args.max_drop)
+        print("\n" + "\n".join(lines))
+        code = max(code, EXIT_CODES[verdict])
     rate = report["summary"]["overall"]["pass_rate"] or 0
     if args.min_pass_rate is not None and rate < args.min_pass_rate:
         print(f"FAIL: pass rate {rate:.0%} is below {args.min_pass_rate:.0%}")
-        return 1
-    return 0
+        code = max(code, 1)
+    return code
 
 
 if __name__ == "__main__":

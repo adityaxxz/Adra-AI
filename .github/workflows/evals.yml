@@ -1,0 +1,72 @@
+name: Evals (quality gate)
+
+# §2.4 "Regression gate in CI" (AI_ENGINEERING_UPGRADES.md). Runs the real agents on the 15-case golden dataset and
+# fails if clearly fewer cases pass than in the saved reference run (evals/baselines/reference.json).
+#
+# Manual only (Actions tab -> "Evals (quality gate)" -> Run workflow): one run costs ~92k Groq tokens, nearly half of a
+# free-tier key's 200k/day, and ~14 Gemini Flash-Lite judge calls (free tier ~20/day), and takes ~40 minutes.
+#
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret):
+#   GROQ_API_KEY_TEST  a Groq key used only by evals (the agents)
+#   GOOGLE_API_KEY     a Google AI key (embeddings + the judge)
+#
+# Exit status: success = no regression; failure = more than 2 fewer passing cases than the reference, or a run that
+# could not be compared (stopped early, cases left unjudged, different cases). The report is attached either way.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    name: Golden dataset vs saved reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.12.0
+        ports:
+          - 6333:6333
+    env:
+      LLM_PROVIDER: groq
+      GROQ_API_KEY_TEST: ${{ secrets.GROQ_API_KEY_TEST }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      QDRANT_URL: http://localhost:6333
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Check the API keys are configured
+        run: |
+          test -n "$GROQ_API_KEY_TEST" || { echo "::error::Add the GROQ_API_KEY_TEST repository secret"; exit 1; }
+          test -n "$GOOGLE_API_KEY" || { echo "::error::Add the GOOGLE_API_KEY repository secret"; exit 1; }
+          test -f evals/baselines/reference.json || { echo "::error::No saved reference: run evals locally with --write-baseline evals/baselines/reference.json"; exit 1; }
+
+      - name: Wait for Qdrant
+        run: |
+          for i in $(seq 1 30); do curl -sf http://localhost:6333/readyz && exit 0; sleep 2; done
+          echo "::error::Qdrant did not start"; exit 1
+
+      - name: Run the evals and compare with the saved reference
+        run: >-
+          python -m evals.run_eval --exec --judge-model gemini-2.5-flash-lite --min-interval 20
+          --label ci --out eval-report.json
+          --baseline evals/baselines/reference.json --max-drop 2
+
+      - name: Attach the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval-report.json
+          if-no-files-found: warn
