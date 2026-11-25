@@ -6,6 +6,10 @@ def planner_prompt(user_prompt: str) -> str:
         You are PLANNER agent, convert the USER prompt into a complete engineering project plan.
 
         user request : {user_prompt}
+
+        DEPENDENCY MANIFEST: if the project uses any third-party package, the plan's files MUST include the manifest
+        that declares them: requirements.txt for Python, package.json for JavaScript/Node. A project that uses only
+        the standard library (or only browser APIs) needs none.
         """
     return PLANNER_PROMPT
 
@@ -58,6 +62,9 @@ def architect_prompt(plan: str) -> str:
         - Create EXACTLY ONE step per file in the plan (no splitting a file across multiple steps).
         - Keep the total number of steps equal to the number of files in the plan.
         - Order steps by dependency: foundational/shared layers first, files that depend on them later.
+        - EXCEPTION: the dependency manifest (requirements.txt, package.json) is ALWAYS the LAST step, so that the
+          coder writing it can see every other file. Its task_description must say: declare every third-party package
+          imported anywhere in the project, and nothing that is only part of the standard library.
         - In each task_description:
             * Specify exactly what to implement in that single file.
             * Name the key symbols (functions, classes, constants, types, config keys, public APIs).
@@ -105,6 +112,9 @@ def coder_prompt( filepath: str, task_description: str, existing_content: str, p
           Do NOT invent imports, module names, env keys, or endpoints that are not established elsewhere.
         - This file MUST expose every symbol or interface that dependent files are expected to use.
         - Import paths, module names, and references MUST match actual filenames and exports in the project.
+        - If THIS file is a dependency manifest (requirements.txt, package.json), derive it from OTHER PROJECT FILES:
+          list EVERY third-party package they import (including the database layer, validation and server libraries,
+          e.g. SQLAlchemy, pydantic, uvicorn) and nothing that is only in the standard library.
         - Return runnable, production-ready code — no placeholders, no TODOs.
 
         Return the COMPLETE final file content only (not a diff, not markdown fences).
