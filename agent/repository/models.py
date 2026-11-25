@@ -1,6 +1,12 @@
 from pydantic import BaseModel
 from typing import Optional
 
+# How many chunks the agents retrieve per question. 5 missed an expected file for 5 of 14 questions on a
+# realistic repo (mean file recall 0.70); 8 reached 0.94 for ~60% more context, and 10 added nothing
+# (current-upgrades.md, "Retrieval recall investigation"). The eval harness reads this too, so it measures
+# the pipeline's real value, not its own copy.
+DEFAULT_RETRIEVAL_K = 8
+
 
 class RepositoryFile(BaseModel):
     path: str

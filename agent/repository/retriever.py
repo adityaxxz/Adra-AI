@@ -1,9 +1,9 @@
-from agent.repository.models import SearchResult
+from agent.repository.models import SearchResult, DEFAULT_RETRIEVAL_K
 from agent.repository.embeddings import embed_text
 from agent.repository.vector_store import search
 
 
-def retrieve(query: str, k: int = 5, collection_name: str = None) -> list[SearchResult]:
+def retrieve(query: str, k: int = DEFAULT_RETRIEVAL_K, collection_name: str = None) -> list[SearchResult]:
     query_embedding = embed_text(query, task_type="RETRIEVAL_QUERY")
 
     results = search(query_embedding, collection_name=collection_name, limit=k)

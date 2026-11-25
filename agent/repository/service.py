@@ -7,7 +7,7 @@ from agent.repository.scanner import scan_repository
 from agent.repository.chunker import chunk_repository
 from agent.repository.retriever import retrieve
 from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection, get_chunk_hashes_for_file, delete_chunk_by_id
-from agent.repository.models import IndexingStats
+from agent.repository.models import IndexingStats, DEFAULT_RETRIEVAL_K
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ def ensure_repo_on_disk(local_path: str, files: dict, repo_id: str) -> str:
     return str(target)
 
 
-def search_repository(query: str, k: int = 5, collection_name: str = None):
+def search_repository(query: str, k: int = DEFAULT_RETRIEVAL_K, collection_name: str = None):
     """
     Semantic search across indexed repository.
     """
