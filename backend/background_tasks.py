@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.graph import project_generation_agent, repository_editing_agent, question_answering_agent
 from agent.repository.service import index_repository, clone_github_repo
-from backend.websocket_manager import ProgressReporter
+from backend.websocket_manager import ProgressReporter, manager
 from agent.repository.vector_store import set_active_collection
 from agent.llm_client import graph_run_config
 from agent.observability import start_run, get_current_run, record_agent_run
@@ -20,6 +20,8 @@ from agent.logging_config import bind_run_context, clear_run_context
 from agent.tools import (
     begin_original_capture, end_original_capture, restore_originals, set_project_root, init_project_root,
 )
+from agent.progress import set_progress_reporter
+from agent.rate_limit import classify_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,33 @@ def _attach_run_metrics(exc: BaseException) -> None:
     run = get_current_run()
     if run is not None:
         exc.run_metrics = run.snapshot()
+
+
+def _user_message(exc: BaseException, *, editing: bool) -> str:
+    """What the chat shows when a run fails. The raw error (provider JSON, stack details) stays in the
+    logs and in the result's `error` field; users get the kind of problem and what to do."""
+    kind, _ = classify_rate_limit(exc)
+    low = str(exc).lower()
+    if kind == "daily":
+        text = "We've hit today's AI usage limit. Please try again later."
+    elif kind == "rate" or "overloaded" in low or "503" in low:
+        text = "Adra-AI is getting a lot of requests right now. Please try again in a minute."
+    elif editing:
+        text = "Something went wrong while making these changes. Please try again."
+    else:
+        text = "Something went wrong while answering your question. Please try again."
+    # A failed editing run restores every file it wrote (restore_originals), so this is true.
+    return f"{text} No files were changed." if editing else text
+
+
+def _progress_sender(session_id: str, loop: asyncio.AbstractEventLoop) -> Callable[[str], None]:
+    """A callback the run's worker thread calls to put a status line ("Planning the changes") in the
+    chat. Hands the broadcast to the event loop, since the graph runs off it."""
+    def send(message: str) -> None:
+        asyncio.run_coroutine_threadsafe(
+            manager.broadcast_progress(session_id, step="progress", message=message), loop
+        )
+    return send
 
 
 def _only_changed(edited: Dict[str, str], originals: Dict[str, Optional[str]]) -> Dict[str, str]:
@@ -231,13 +260,15 @@ class BackgroundTaskManager:
                 repo_path,
                 collection_name,
                 recursion_limit,
-                session_id
+                session_id,
+                _progress_sender(session_id, loop),
             )
             metrics = result.pop("_metrics", None)
             if metrics:
                 logger.info("agent_run_metrics", extra={"session_id": session_id, **metrics})
 
             # Step 4: Collect edited files from disk using coder_state step filepaths
+            await manager.broadcast_progress(session_id, step="progress", message="Applying final touches")
             await reporter.step("collecting_changes", "Collecting edited files...")
             # Pre-edit content of those files, so the UI can show a diff and revert a rejected one.
             captured = result.pop("_original_files", {})
@@ -275,11 +306,13 @@ class BackgroundTaskManager:
 
         except Exception as e:
             logger.error(f"Repository editing failed: {e}", exc_info=True)
-            await reporter.error(f"Repository editing failed: {str(e)}")
+            user_message = _user_message(e, editing=True)
+            await reporter.error(user_message)
             record_agent_run("editing", "failure")
             return {
                 "success": False,
-                "error": str(e),
+                "error": str(e),                  # raw: the run store and evals read this
+                "user_message": user_message,     # what the chat shows
                 "metrics": getattr(e, "run_metrics", None),
                 "task_id": task_id
             }
@@ -290,7 +323,8 @@ class BackgroundTaskManager:
         repo_path: str,
         collection_name: str,
         recursion_limit: int,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        on_progress: Optional[Callable[[str], None]] = None,
     ) -> Dict:
         """Synchronous wrapper for repository editing agent. Runs in a worker
         thread; see `_run_project_generation_agent` for why context binding
@@ -298,6 +332,7 @@ class BackgroundTaskManager:
         bind_run_context(session_id=session_id, mode="editing")
         start_run(session_id=session_id)
         set_project_root(repo_path)   # per-run; see _run_project_generation_agent
+        set_progress_reporter(on_progress)
         begin_original_capture()
         try:
             agent = repository_editing_agent
@@ -329,6 +364,7 @@ class BackgroundTaskManager:
         finally:
             end_original_capture()  # no-op if already ended; stops capture on failure
             set_project_root(None)
+            set_progress_reporter(None)
             clear_run_context()
     
     async def execute_question_answering(
@@ -381,7 +417,8 @@ class BackgroundTaskManager:
                 repo_path,
                 collection_name,
                 recursion_limit,
-                session_id
+                session_id,
+                _progress_sender(session_id, loop),
             )
             metrics = result.pop("_metrics", None)
             if metrics:
@@ -408,11 +445,13 @@ class BackgroundTaskManager:
 
         except Exception as e:
             logger.error(f"Question answering failed: {e}", exc_info=True)
-            await reporter.error(f"Question answering failed: {str(e)}")
+            user_message = _user_message(e, editing=False)
+            await reporter.error(user_message)
             record_agent_run("qa", "failure")
             return {
                 "success": False,
-                "error": str(e),
+                "error": str(e),                  # raw: the run store and evals read this
+                "user_message": user_message,     # what the chat shows
                 "metrics": getattr(e, "run_metrics", None),
                 "task_id": task_id
             }
@@ -423,7 +462,8 @@ class BackgroundTaskManager:
         repo_path: str,
         collection_name: str,
         recursion_limit: int,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        on_progress: Optional[Callable[[str], None]] = None,
     ) -> Dict:
         """Synchronous wrapper for question answering agent. Runs in a worker
         thread; see `_run_project_generation_agent` for why context binding
@@ -431,6 +471,7 @@ class BackgroundTaskManager:
         bind_run_context(session_id=session_id, mode="qa")
         start_run(session_id=session_id)
         set_project_root(repo_path)
+        set_progress_reporter(on_progress)
         try:
             agent = question_answering_agent
             initial_state = {
@@ -453,6 +494,7 @@ class BackgroundTaskManager:
             raise
         finally:
             set_project_root(None)
+            set_progress_reporter(None)
             clear_run_context()
     
     async def index_repository_task(

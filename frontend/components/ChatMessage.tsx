@@ -13,6 +13,7 @@ interface ChatMessageProps {
   userName?: string;
   /** Rate this reply. Rejects if it could not be saved. Thumbs only show when this and message.runSessionId exist. */
   onRate?: (rating: 'up' | 'down') => Promise<void>;
+  onRetry?: () => void;   // shown on a failed run's reply; resends the same request
 }
 
 function parseInlineMarkdown(text: string): string {
@@ -177,7 +178,7 @@ function RatingButtons({ rating, onRate }: { rating?: 'up' | 'down'; onRate: (r:
   );
 }
 
-export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = true, userName, onRate }: ChatMessageProps) {
+export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = true, userName, onRate, onRetry }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasEditedFiles = message.editedFiles && Object.keys(message.editedFiles).length > 0;
 
@@ -275,18 +276,32 @@ export function ChatMessage({ message, onOpenFile, onResolveEdits, animate = tru
             </span>
           )}
           {!isUser && message.runSessionId && onRate && <RatingButtons rating={message.rating} onRate={onRate} />}
+          {!isUser && message.retry && onRetry && (
+            <button
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white"
+              id="retry-btn"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Try again
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-export function TypingIndicator() {
+/** "Thinking..." until the run reports what it is doing ("Planning the changes", "Writing app.js (1 of 2)"). */
+export function TypingIndicator({ label = 'Thinking' }: { label?: string }) {
   return (
     <div className="flex gap-3 animate-fade-in">
       <AIAvatar />
       <div className="chat-bubble-assistant flex items-center gap-2 py-3 px-4">
-        <span style={{ color: 'var(--text-secondary)' }}>Thinking</span>
+        <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
         <div className="flex items-center gap-1">
           <span className="typing-dot" />
           <span className="typing-dot" />

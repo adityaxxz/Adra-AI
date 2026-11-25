@@ -61,10 +61,12 @@ class Project(Base):
     status = Column(Enum(ProjectStatus), default=ProjectStatus.PENDING)
     error_message = Column(Text)
     integration_fixes = Column(Integer, default=0)  # Number of fixes applied
+    repository_id = Column(String, nullable=True)  # repo made from this project ("Open as Repository"), if any
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    started_at = Column(DateTime(timezone=True))  # when the latest generation run began
     completed_at = Column(DateTime(timezone=True))
     
     # Relationships

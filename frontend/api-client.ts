@@ -66,6 +66,12 @@ export const projectsAPI = {
     return response.data;
   },
 
+  /** Copies a completed project into a new repository (or returns the one already made). */
+  openAsRepository: async (projectId: string): Promise<{ repository_id: string; created: boolean }> => {
+    const response = await api.post(`/projects/${projectId}/repository`);
+    return response.data;
+  },
+
   downloadProject: async (projectId: string) => {
     const response = await api.get(`/projects/${projectId}/download`, {
       responseType: 'blob'

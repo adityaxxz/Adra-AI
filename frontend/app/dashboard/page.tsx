@@ -355,7 +355,7 @@ export default function Dashboard() {
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-semibold text-white truncate mb-0.5">{repo.name}</h3>
                       <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                        {repo.provider === 'local' ? repo.local_path : repo.url}
+                        {repo.provider === 'generated' ? 'From a generated project' : repo.provider === 'local' ? repo.local_path : repo.url}
                       </p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">

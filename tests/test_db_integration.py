@@ -69,6 +69,7 @@ async def test_lifespan_ddl_is_idempotent_and_upgrades_an_old_schema(db_session_
 
     async with engine.begin() as conn:           # simulate the pre-snapshot schema
         await conn.execute(text("ALTER TABLE repositories DROP COLUMN files"))
+        await conn.execute(text("ALTER TABLE projects DROP COLUMN started_at"))
     async with db_session_maker() as db:         # and a run the previous process died in the middle of
         await _seed_user(db)
         db.add(Session(id="killed-by-deploy", user_id="u1", mode=SessionMode.QUESTION_ANSWERING, messages=[], is_active=True))
@@ -82,6 +83,10 @@ async def test_lifespan_ddl_is_idempotent_and_upgrades_an_old_schema(db_session_
         cols = {r[0] for r in await conn.execute(text(
             "select column_name from information_schema.columns where table_name = 'repositories'"))}
     assert "files" in cols
+    async with engine.connect() as conn:
+        project_cols = {r[0] for r in await conn.execute(text(
+            "select column_name from information_schema.columns where table_name = 'projects'"))}
+    assert "started_at" in project_cols
     async with db_session_maker() as db:         # booting is what clears orphans, not just the helper
         killed = (await db.execute(select(Session).where(Session.id == "killed-by-deploy"))).scalar_one()
         assert killed.is_active is False
@@ -133,3 +138,39 @@ async def test_health_is_degraded_when_only_the_vector_store_is_down(db_session_
     assert body["checks"]["database"] == "ok"
     assert body["checks"]["vector_store"].startswith("error")
     assert body["status"] == "degraded"
+
+
+# ---------------------------------------------------------------- generation timing
+
+async def test_starting_generation_records_when_it_began(db_session_maker, monkeypatch, tmp_path):
+    """The project page shows how long generation took (completed_at - started_at). created_at
+    can't stand in: a project can sit pending for a long time before the user starts it."""
+    import httpx
+    from datetime import datetime, timedelta
+
+    async def get_db():
+        async with db_session_maker() as db:
+            yield db
+
+    monkeypatch.chdir(tmp_path)                                   # /generate makes generated_projects/<id>
+    monkeypatch.setattr(M, "_run_generation_task", lambda **kw: None)   # no agent run
+    M.app.dependency_overrides[M.get_db] = get_db
+    M.app.dependency_overrides[M.get_current_user] = lambda: {"sub": "u1"}
+    long_ago = datetime.utcnow() - timedelta(days=3)
+    async with db_session_maker() as db:
+        await _seed_user(db)
+        db.add(Project(id="p1", user_id="u1", name="calc", prompt="make it", files={}, created_at=long_ago))
+        await db.commit()
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=M.app), base_url="http://test") as c:
+
+            r = await c.post("/generate", json={"prompt": "make it", "mode": "generation", "project_id": "p1"})
+            assert r.status_code == 200
+            body = (await c.get("/projects/p1")).json()
+    finally:
+        M.app.dependency_overrides.clear()
+
+    assert body["status"] == "in_progress" and body["started_at"] is not None
+    async with db_session_maker() as db:
+        p = (await db.execute(select(Project).where(Project.id == "p1"))).scalar_one()
+    assert p.started_at - p.created_at > timedelta(days=2)       # the run's start, not the project's creation

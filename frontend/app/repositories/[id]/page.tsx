@@ -42,6 +42,9 @@ interface Repo { id: string; name: string; is_indexed: boolean; provider: string
 
 type Mode = 'ask' | 'editor';
 
+// No frame from a running run for this long ends the wait with an error (see the silence effect).
+const RUN_SILENCE_TIMEOUT_MS = 10 * 60 * 1000;
+
 // ----- Icons -----
 function SendIcon({ spinning }: { spinning?: boolean }) {
   if (spinning) {
@@ -90,6 +93,9 @@ function RepositoryPageInner() {
   const [copied, setCopied] = useState(false);
   const [showDirectory, setShowDirectory] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  // Status line under the chat while a run works ("Planning the changes"); null shows "Thinking".
+  const [progressText, setProgressText] = useState<string | null>(null);
+  const lastRequestRef = useRef<{ prompt: string; mode: Mode } | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
@@ -176,6 +182,12 @@ function RepositoryPageInner() {
       return;
     }
 
+    // Run progress ("Searching your codebase", "Writing app.js (1 of 2)") for the status line.
+    if (latestMessage.type === 'progress' && latestMessage.step === 'progress') {
+      if (isProcessing && latestMessage.message) setProgressText(latestMessage.message);
+      return;
+    }
+
     // Chat messages
     if (mode === 'ask') {
       if (latestMessage.type === 'complete') {
@@ -185,7 +197,7 @@ function RepositoryPageInner() {
           addAssistantMessage(String(answer), undefined, sessionId ?? undefined);
         }
       } else if (latestMessage.type === 'error') {
-        addAssistantMessage(`Error: ${latestMessage.error || 'Unknown error'}`);
+        addFailureMessage(latestMessage.error || 'Something went wrong. Please try again.');
       }
     } else if (mode === 'editor') {
       if (latestMessage.type === 'complete') {
@@ -198,19 +210,27 @@ function RepositoryPageInner() {
           setTimeout(() => loadRepository(), 1500);
         }
       } else if (latestMessage.type === 'error') {
-        addAssistantMessage(`Error: ${latestMessage.error || 'Unknown error'}`);
+        addFailureMessage(latestMessage.error || 'Something went wrong. Please try again.');
       }
     }
-  }, [latestMessage, mode, isIndexing]);
+  }, [latestMessage, mode, isIndexing, isProcessing]);
+
+  // A run that goes silent (a lost frame, a dead worker) would otherwise spin forever. Every frame
+  // for the run restarts this clock; 10 minutes covers rate-limit waits between steps.
+  useEffect(() => {
+    if (!isProcessing) return;
+    const timer = setTimeout(() => {
+      addFailureMessage('This is taking much longer than usual. Please try again.');
+    }, RUN_SILENCE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [isProcessing, latestMessage]);
 
   // Render a finished run that we learned about from the REST API rather than
   // the WebSocket. Payload here is the stored task result, which has a
   // different shape from the WS `complete` frame.
   const applySessionOutcome = (result: any) => {
     if (!result || result.success === false) {
-      addAssistantMessage(
-        `Error: ${result?.error || 'The run did not complete. Please try again.'}`
-      );
+      addFailureMessage(result?.user_message || 'Something went wrong. Please try again.');
       return;
     }
     if (mode === 'ask') {
@@ -412,6 +432,19 @@ function RepositoryPageInner() {
       return updated;
     });
     setIsProcessing(false);
+    setProgressText(null);
+  };
+
+  // A failed run's reply, with what was asked so "Try again" can resend it.
+  const addFailureMessage = (content: string) => {
+    const retry = lastRequestRef.current ?? undefined;
+    setCurrentSession(prev => {
+      const updated = appendMessage(prev, { role: 'assistant', content, retry });
+      saveChatSession(repositoryId, updated);
+      return updated;
+    });
+    setIsProcessing(false);
+    setProgressText(null);
   };
 
   const handleRate = async (idx: number, rating: 'up' | 'down') => {
@@ -527,12 +560,23 @@ function RepositoryPageInner() {
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || !repository || isProcessing) return;
-
     const userText = input.trim();
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    await submitPrompt(userText, mode);
+  };
 
-    if (mode === 'editor') {
+  const handleRetry = (retry: { prompt: string; mode: Mode }) => {
+    if (isProcessing) return;
+    setMode(retry.mode);   // the reply is read according to the mode, so match the original request
+    submitPrompt(retry.prompt, retry.mode);
+  };
+
+  const submitPrompt = async (userText: string, runMode: Mode) => {
+    if (!repository) return;
+    lastRequestRef.current = { prompt: userText, mode: runMode };
+
+    if (runMode === 'editor') {
       // The agent works from what's on disk, so edits still awaiting review count as accepted once you ask for more.
       for (const [i, m] of currentSession.messages.entries()) {
         const pending = Object.keys(m.originalFiles ?? {}).filter(f => (m.editReview?.[f] ?? 'pending') === 'pending');
@@ -542,8 +586,9 @@ function RepositoryPageInner() {
 
     addUserMessage(userText);
     setIsProcessing(true);
+    setProgressText(null);
 
-    const newSessionId = `${mode === 'ask' ? 'qa' : 'edit'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newSessionId = `${runMode === 'ask' ? 'qa' : 'edit'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     wasConnectedRef.current = false; // new run: don't inherit the last run's connection
     setSessionId(newSessionId);
     await new Promise(r => setTimeout(r, 500));
@@ -551,13 +596,13 @@ function RepositoryPageInner() {
     try {
       await generationAPI.startGeneration({
         prompt: userText,
-        mode: mode === 'ask' ? 'question_answering' : 'editing',
+        mode: runMode === 'ask' ? 'question_answering' : 'editing',
         repository_id: repository.id,
         recursion_limit: 100,
         session_id: newSessionId,
       });
     } catch (e: any) {
-      addAssistantMessage('Sorry, there was an error processing your request. Please try again.');
+      addFailureMessage('Something went wrong. Please try again.');
     }
   };
 
@@ -849,11 +894,13 @@ function RepositoryPageInner() {
                   animate={idx === currentSession.messages.length - 1}
                   userName={user?.name}
                   onRate={rating => handleRate(idx, rating)}
+                  onRetry={msg.retry && idx === currentSession.messages.length - 1 && !isProcessing
+                    ? () => handleRetry(msg.retry!) : undefined}
                 />
               ))
             )}
 
-            {isProcessing && <TypingIndicator />}
+            {isProcessing && <TypingIndicator label={progressText ?? 'Thinking'} />}
             <div ref={chatEndRef} />
           </div>
 
@@ -862,19 +909,6 @@ function RepositoryPageInner() {
             className="shrink-0 px-4 py-4 border-t"
             style={{ borderColor: 'var(--border)', background: 'var(--bg-base)' }}
           >
-            {/* Repo stats row */}
-            <div className="flex items-center gap-4 px-1 mb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-              <span>{repository.files_count} files</span>
-              <span>·</span>
-              <span>{repository.chunks_count} chunks</span>
-              {repository.last_indexed_at && (
-                <>
-                  <span>·</span>
-                  <span>Indexed {new Date(repository.last_indexed_at).toLocaleDateString()}</span>
-                </>
-              )}
-            </div>
-
             <form onSubmit={handleSubmit}>
               <div
                 className="flex items-center gap-3 rounded-2xl px-4 py-3 transition-all"

@@ -107,3 +107,65 @@ def test_the_editing_worker_uses_its_own_root_and_returns_the_originals(tmp_path
     assert agent.root_seen == tmp_path.resolve()
     assert result["_original_files"] == {"a.py": "old"}
     assert T.get_project_root() == T.DEFAULT_PROJECT_ROOT, "the worker leaked its root into the pool thread"
+
+
+# ------------------------------------------------------------- what the chat shows
+
+def test_failures_reach_the_user_as_the_kind_of_problem_not_the_raw_error():
+    daily = RuntimeError("429 RESOURCE_EXHAUSTED: Quota exceeded for metric GenerateRequestsPerDay, limit: 20")
+    rate = RuntimeError("Error code: 429 - Rate limit reached for model gpt-oss-120b. Please try again in 3.98s.")
+    busy = RuntimeError("503 UNAVAILABLE. The model is overloaded. Please try again later.")
+    other = ValueError("Structured output parsing failed for EditPlan: ...")
+
+    assert BT._user_message(daily, editing=True) == "We've hit today's AI usage limit. Please try again later. No files were changed."
+    assert BT._user_message(rate, editing=True).startswith("Adra-AI is getting a lot of requests right now.")
+    assert BT._user_message(busy, editing=False) == "Adra-AI is getting a lot of requests right now. Please try again in a minute."
+    assert BT._user_message(other, editing=True) == (
+        "Something went wrong while making these changes. Please try again. No files were changed.")
+    assert BT._user_message(other, editing=False) == "Something went wrong while answering your question. Please try again."
+
+
+class _Frames:
+    """Records what the backend sends over the WebSocket."""
+    def __init__(self, monkeypatch):
+        from backend import websocket_manager as W
+        self.sent = []
+
+        async def record(session_id, update):
+            self.sent.append(update)
+        monkeypatch.setattr(W.manager, "broadcast_to_session", record)
+
+    def of(self, kind):
+        return [f for f in self.sent if f.get("type") == kind]
+
+
+async def test_a_failed_edit_shows_a_friendly_message_and_keeps_the_raw_error_for_the_logs(tmp_path, monkeypatch):
+    # Production gap: the chat showed "Error: Repository editing failed: 429 RESOURCE_EXHAUSTED {...}".
+    frames = _Frames(monkeypatch)
+    raw = "429 RESOURCE_EXHAUSTED {'error': {'code': 429, 'status': 'RESOURCE_EXHAUSTED'}}"
+
+    def behaviour(T):
+        raise RuntimeError(raw)
+    mgr, _ = _run_editing_worker(monkeypatch, tmp_path, behaviour)
+    out = await mgr.execute_repository_editing("sess", "edit it", str(tmp_path), "c")
+
+    assert out["success"] is False and out["error"] == raw                     # run store / evals read this
+    assert out["user_message"].startswith("Adra-AI is getting a lot of requests right now.")
+    [error] = frames.of("error")
+    assert error["error"] == out["user_message"] and "RESOURCE_EXHAUSTED" not in error["error"]
+
+
+async def test_an_edit_reports_its_steps_to_the_chat_while_it_runs(tmp_path, monkeypatch):
+    from agent.progress import report_progress
+    frames = _Frames(monkeypatch)
+
+    def behaviour(T):
+        report_progress("Planning the changes")
+        report_progress("Writing a.py (1 of 1)")
+        return {"coder_state": None}
+    mgr, _ = _run_editing_worker(monkeypatch, tmp_path, behaviour)
+    await mgr.execute_repository_editing("sess", "edit it", str(tmp_path), "c")
+
+    steps = [f["message"] for f in frames.of("progress") if f.get("step") == "progress"]
+    assert steps == ["Planning the changes", "Writing a.py (1 of 1)", "Applying final touches"]
+    assert frames.sent.index(frames.of("complete")[0]) > frames.sent.index(frames.of("progress")[-1])

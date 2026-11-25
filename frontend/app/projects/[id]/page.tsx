@@ -20,7 +20,17 @@ interface Project {
   integration_fixes: number;
   created_at: string;
   updated_at: string | null;
+  started_at: string | null;
   completed_at: string | null;
+  repository_id: string | null;
+}
+
+/** How long a generation run took: "30s", or "1m 3s" once it passes a minute. */
+function formatDuration(startIso: string, endIso: string): string | null {
+  const secs = Math.round((Date.parse(endIso) - Date.parse(startIso)) / 1000);
+  if (!Number.isFinite(secs) || secs < 0) return null;
+  const m = Math.floor(secs / 60);
+  return m ? `${m}m ${secs % 60}s` : `${secs}s`;
 }
 
 export default function ProjectPage() {
@@ -37,6 +47,7 @@ export default function ProjectPage() {
   const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [openingAsRepo, setOpeningAsRepo] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [sidebarProjects, setSidebarProjects] = useState<any[]>([]);
@@ -137,6 +148,21 @@ export default function ProjectPage() {
 
   const handleDelete = () => {
     setDeleteConfirmOpen(true);
+  };
+
+  // Copies the project into a repository and opens it there; the repo page starts indexing by itself.
+  const handleOpenAsRepository = async () => {
+    if (!project || openingAsRepo) return;
+    setOpeningAsRepo(true);
+    try {
+      const { repository_id } = await projectsAPI.openAsRepository(project.id);
+      setProject({ ...project, repository_id });
+      router.push(`/repositories/${repository_id}`);
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.response?.data?.detail || 'Failed to open the project as a repository.');
+      setOpeningAsRepo(false);
+    }
   };
 
   const handleDownload = async () => {
@@ -263,14 +289,29 @@ export default function ProjectPage() {
                   </button>
                 )}
                 {project.status === 'completed' && project.files && Object.keys(project.files).length > 0 && (
-                  <button
-                    onClick={handleDownload}
-                    disabled={downloading}
-                    className="btn-secondary text-sm disabled:opacity-60 disabled:cursor-wait"
-                    id="download-project-btn"
-                  >
-                    {downloading ? 'Zipping…' : 'Download ZIP'}
-                  </button>
+                  project.repository_id ? (
+                    <Link
+                      href={`/repositories/${project.repository_id}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all duration-200 bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:border-emerald-400"
+                      title="Open the repository made from this project"
+                      id="open-as-repo-btn"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Added as repository
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={handleOpenAsRepository}
+                      disabled={openingAsRepo}
+                      className="btn-primary [background:#4f46e5] hover:[background:#4338ca] text-sm disabled:opacity-60 disabled:cursor-wait"
+                      title="Copy this project into a repository you can ask about and edit"
+                      id="open-as-repo-btn"
+                    >
+                      {openingAsRepo ? 'Opening…' : 'Open as Repository'}
+                    </button>
+                  )
                 )}
                 <button
                   onClick={handleDelete}
@@ -361,9 +402,19 @@ export default function ProjectPage() {
                   Project Files
                   <span className="badge badge-zinc">{Object.keys(project.files).length}</span>
                 </h2>
-                <span className="badge badge-green text-xs font-semibold px-2.5 py-1">
-                  Completed
-                </span>
+                <button
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 bg-[#818cf8]/10 hover:bg-[#818cf8]/20 border-[#818cf8]/40 hover:border-[#818cf8] text-[#818cf8] hover:text-white disabled:opacity-60 disabled:cursor-wait"
+                  title="Download the project files as a ZIP"
+                  id="download-project-btn"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+                  </svg>
+                  {downloading ? 'Zipping…' : 'Download ZIP'}
+                </button>
               </div>
               <div className="p-4 max-h-80 overflow-auto">
                 <ProjectDirectoryViewer
@@ -438,8 +489,10 @@ export default function ProjectPage() {
           {/* Metadata */}
           <div className="mt-6 flex items-center gap-6 text-xs" style={{ color: 'var(--text-muted)' }}>
             <span>Created: {new Date(project.created_at).toLocaleDateString()}</span>
-            {project.updated_at && <span>Updated: {new Date(project.updated_at).toLocaleDateString()}</span>}
-            {project.completed_at && <span>Completed: {new Date(project.completed_at).toLocaleDateString()}</span>}
+            {project.status === 'completed' && project.started_at && project.completed_at &&
+              formatDuration(project.started_at, project.completed_at) && (
+                <span>Completed: {formatDuration(project.started_at, project.completed_at)}</span>
+              )}
           </div>
 
           {/* ---- GitHub-like Delete Confirmation Modal ---- */}

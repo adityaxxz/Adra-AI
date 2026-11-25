@@ -391,3 +391,22 @@ def test_an_edit_keeps_a_files_final_newline_and_does_not_invent_one(project, mo
     _run_editing(project, monkeypatch, _plan_llm(["with_nl.py", "no_nl.py"], coder="x = 0"))
     assert (project / "with_nl.py").read_text() == "x = 0\n"
     assert (project / "no_nl.py").read_text() == "x = 0"
+
+
+def test_the_editing_graph_reports_each_stage_as_it_starts(project, monkeypatch):
+    from agent.progress import set_progress_reporter
+    (project / "a.py").write_text("a = 1\n")
+    (project / "b.py").write_text("b = 1\n")
+    seen = []
+    set_progress_reporter(seen.append)
+    try:
+        _run_editing(project, monkeypatch, _plan_llm(["a.py", "b.py"]))
+    finally:
+        set_progress_reporter(None)
+    assert seen == [
+        "Searching your codebase",
+        "Planning the changes",
+        "Writing a.py (1 of 2)",
+        "Writing b.py (2 of 2)",
+        "Checking everything fits together",
+    ]

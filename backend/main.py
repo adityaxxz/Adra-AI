@@ -140,6 +140,8 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS projects_created_count INTEGER DEFAULT 0 NOT NULL;"))
         await conn.execute(text("ALTER TABLE repositories ADD COLUMN IF NOT EXISTS files JSON;"))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;"))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS repository_id VARCHAR;"))
     await fail_orphaned_runs()
     yield
     # Shutdown
@@ -483,8 +485,88 @@ async def get_project(
         "integration_fixes": project.integration_fixes,
         "created_at": project.created_at.isoformat(),
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
-        "completed_at": project.completed_at.isoformat() if project.completed_at else None
+        "started_at": project.started_at.isoformat() if project.started_at else None,
+        "completed_at": project.completed_at.isoformat() if project.completed_at else None,
+        "repository_id": await _live_project_repo_id(db, project, current_user["sub"]),
     }
+
+
+async def _live_project_repo_id(db: AsyncSession, project: Project, user_id: str) -> Optional[str]:
+    """The repo made from this project, or None if there isn't one or it has since been deleted."""
+    if not project.repository_id:
+        return None
+    result = await db.execute(
+        select(Repository.id).where(Repository.id == project.repository_id, Repository.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+def _write_project_files(root: str, files: dict) -> dict:
+    """Write a generated project's files under `root`; returns the {path: content} actually written."""
+    real_root = os.path.realpath(root)
+    written = {}
+    for rel, content in (files or {}).items():
+        if content is None:
+            continue
+        rel = rel.replace("\\", "/").lstrip("/")
+        full = os.path.realpath(os.path.join(real_root, rel))
+        if os.path.commonpath([real_root, full]) != real_root:
+            continue                                   # never write outside the repo folder
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8", newline="") as f:
+            f.write(content)
+        written[rel] = content
+    return written
+
+
+@app.post("/projects/{project_id}/repository")
+async def open_project_as_repository(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Copy a generated project into a new repository so it can be indexed, asked about and edited.
+
+    The project itself is left as it is. Calling this again returns the same repository instead of
+    making another one (`created: false`); if that repository was deleted, a new one is made.
+    Generated repositories don't count toward the local/GitHub repository limits: there is at
+    most one per project.
+    """
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == current_user["sub"])
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    existing = await _live_project_repo_id(db, project, current_user["sub"])
+    if existing:
+        return {"repository_id": existing, "created": False}
+
+    if project.status != ProjectStatus.COMPLETED or not any(v is not None for v in (project.files or {}).values()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only a completed project with files can be opened as a repository",
+        )
+
+    repo_id = str(uuid.uuid4())
+    local_path = os.path.join("temp_repos", f"generated_{repo_id}")
+    written = await asyncio.to_thread(_write_project_files, local_path, project.files)
+
+    repository = Repository(
+        id=repo_id,
+        user_id=current_user["sub"],
+        name=project.name,
+        local_path=local_path,
+        provider="generated",
+        collection_name=f"repo_{repo_id.replace('-', '_')}",
+        is_indexed=False,
+        files=written,                 # snapshot, so the repo survives an ephemeral disk wipe
+    )
+    db.add(repository)
+    project.repository_id = repo_id
+    await db.commit()
+    return {"repository_id": repo_id, "created": True}
 
 
 @app.delete("/projects/{project_id}")
@@ -624,7 +706,7 @@ async def create_repository(
         else:
             stmt = select(func.count(Repository.id)).where(
                 Repository.user_id == current_user["sub"],
-                Repository.provider != "local"
+                Repository.provider.notin_(["local", "generated"])
             )
             result = await db.execute(stmt)
             github_count = result.scalar()
@@ -1314,6 +1396,7 @@ async def start_generation(
             if project:
                 project.status = ProjectStatus.IN_PROGRESS
                 project.error_message = None
+                project.started_at = datetime.utcnow()
                 await db.commit()
 
     elif request.mode == SessionMode.EDITING:

@@ -407,7 +407,7 @@ export default function Home() {
                 </div>
                 <h3 className="text-xl font-bold text-white font-heading mb-2">Repository Editing</h3>
                 <p className="text-sm text-[#6b6b80] leading-relaxed font-body mb-6">
-                  Upload or connect an existing repo. The Repository Agent indexes it into Qdrant, retrieves relevant context, and edits only what needs changing - without duplicating what you already have.
+                  Upload or connect an existing repo. The Repository Agent indexes it into Qdrant, and the Edit Planner picks only the files that need changing, grounded in your real file tree. The Coder applies each edit, the Integrator checks just those files, and you accept or reject every change as a diff.
                 </p>
               </div>
               <div className="pt-4 border-t border-[#1f1f2e] mt-auto">
@@ -415,7 +415,7 @@ export default function Home() {
                   Pipeline Trace
                 </div>
                 <div className="text-[10px] sm:text-xs font-mono text-[#818cf8] select-none bg-[#090910] px-2.5 py-1.5 rounded border border-[#1f1f2e] inline-block">
-                  Repository Agent → Planner → Coder → Integrator
+                  Repository Agent → Edit Planner → Coder → Integrator
                 </div>
               </div>
             </div>

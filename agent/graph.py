@@ -12,6 +12,7 @@ from langgraph.graph import StateGraph
 from agent.tools import read_file, write_file, init_project_root, read_sibling_files_context, read_selected_project_files, list_project_paths, closest_existing_path
 from agent.llm_client import structured_invoke, simple_invoke, truncate_for_context, get_stats
 from agent.observability import langfuse_observe
+from agent.progress import report_progress
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,7 @@ def edit_planner_agent(state: dict) -> dict:
     list. Grounding the model in the real file listing is what keeps it from
     planning edits to paths that don't exist.
     """
+    report_progress("Planning the changes")
     existing = list_project_paths()
     repo_files = "\n".join(existing) or "(no files found)"
 
@@ -217,6 +219,7 @@ def coder_agent(state: dict) -> dict:
         return _carry(state, coder_state=coder_state, status="DONE")
 
     curr_task = steps[coder_state.current_step_idx]
+    report_progress(f"Writing {curr_task.filepath} ({coder_state.current_step_idx + 1} of {len(steps)})")
     existing_content = read_file.invoke({"path": curr_task.filepath})
     if len(existing_content) > MAX_EDIT_FILE_CHARS or existing_content.startswith("[Binary file skipped") or "\x00" in existing_content:
         logger.warning(f"coder_agent: not editing {curr_task.filepath!r} (binary or over {MAX_EDIT_FILE_CHARS} chars)")
@@ -255,6 +258,7 @@ def coder_agent(state: dict) -> dict:
 @traceable(name="integrator_agent", run_type="chain")
 @langfuse_observe("integrator_agent", as_type="agent")
 def integrator_agent(state: dict) -> dict:
+    report_progress("Checking everything fits together")
     task_plan: TaskPlan = state["coder_state"].task_plan
 
     # Review only the files this run actually wrote (one per coder step), not the
@@ -303,6 +307,7 @@ def integrator_agent(state: dict) -> dict:
 @traceable(name="repository_agent", run_type="chain")
 @langfuse_observe("repository_agent", as_type="retriever")
 def repository_agent(state: dict):
+    report_progress("Searching your codebase")
     try:
         collection_name = state.get("collection_name", None)
         results = search_repository(state["user_prompt"], collection_name=collection_name)
@@ -328,6 +333,7 @@ def explainer_agent(state: dict) -> dict:
     user_question = state["user_prompt"]
     retrieved_context = state.get("retrieved_context", "")
 
+    report_progress("Writing an answer")
     prompt = explainer_prompt(user_question, retrieved_context)
     answer = simple_invoke(prompt, agent="explainer", session_id=state.get("session_id"))
 

@@ -113,6 +113,27 @@ function LogoutIcon() {
   );
 }
 
+// Which sidebar dropdowns the user left open, so they survive a reload and moving between pages
+// (every page mounts its own Sidebar). Only the user's own clicks are saved.
+const SIDEBAR_STATE_KEY = 'adra_sidebar_state';
+type SidebarState = { projects?: boolean; repos?: boolean; repoChats?: Record<string, boolean> };
+
+function readSidebarState(): SidebarState {
+  try {
+    return JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveSidebarState(update: (s: SidebarState) => SidebarState) {
+  try {
+    localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(update(readSidebarState())));
+  } catch {
+    // storage full or blocked: the dropdowns just won't be remembered
+  }
+}
+
 interface RepoChatSectionProps {
   repo: Repository;
   isActiveRepo: boolean;
@@ -127,6 +148,19 @@ function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession,
   const [open, setOpen] = useState(isActiveRepo);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const router = useRouter();
+
+  // Restore after mount: localStorage doesn't exist during the server render.
+  useEffect(() => {
+    const saved = readSidebarState().repoChats?.[repo.id];
+    if (saved !== undefined) setOpen(saved);
+  }, [repo.id]);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    saveSidebarState(s => ({ ...s, repoChats: { ...s.repoChats, [repo.id]: next } }));
+    if (next) router.push(repoPath);
+  };
 
   useEffect(() => {
     if (open) {
@@ -154,7 +188,7 @@ function RepoChatSection({ repo, isActiveRepo, activeSessionId, onSelectSession,
   return (
     <div>
       <button
-        onClick={() => { setOpen(o => !o); if (!open) router.push(repoPath); }}
+        onClick={toggle}
         className={`sidebar-item w-full ${isActiveRepo ? 'active' : ''}`}
       >
         <RepoIcon />
@@ -228,15 +262,26 @@ export function Sidebar({
   const [projectsOpen, setProjectsOpen] = useState(() => pathname.startsWith('/projects'));
   const [reposOpen, setReposOpen] = useState(() => !pathname.startsWith('/projects'));
 
+  // Open the sections the user left open (restored after mount: localStorage doesn't exist during the
+  // server render), plus whichever one holds the current page. Never closes a section by itself.
   useEffect(() => {
-    if (pathname.startsWith('/projects')) {
-      setProjectsOpen(true);
-      setReposOpen(false);
-    } else if (pathname.startsWith('/repositories')) {
-      setProjectsOpen(false);
-      setReposOpen(true);
-    }
+    const saved = readSidebarState();
+    const onProjects = pathname.startsWith('/projects');
+    const onRepos = pathname.startsWith('/repositories');
+    if (saved.projects !== undefined || onProjects) setProjectsOpen(!!saved.projects || onProjects);
+    if (saved.repos !== undefined || onRepos) setReposOpen(!!saved.repos || onRepos);
   }, [pathname]);
+
+  const toggleProjects = () => {
+    const next = !projectsOpen;
+    setProjectsOpen(next);
+    saveSidebarState(s => ({ ...s, projects: next }));
+  };
+  const toggleRepos = () => {
+    const next = !reposOpen;
+    setReposOpen(next);
+    saveSidebarState(s => ({ ...s, repos: next }));
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -277,7 +322,7 @@ export function Sidebar({
         {projects.length > 0 && (
           <div className="mt-2">
             <button
-              onClick={() => setProjectsOpen(o => !o)}
+              onClick={toggleProjects}
               className="sidebar-section-title flex items-center gap-2 w-full hover:text-white transition-colors"
             >
               <ChevronIcon open={projectsOpen} />
@@ -314,7 +359,7 @@ export function Sidebar({
         {/* Repositories Section */}
         <div className="mt-2">
           <button
-            onClick={() => setReposOpen(o => !o)}
+            onClick={toggleRepos}
             className="sidebar-section-title flex items-center gap-2 w-full hover:text-white transition-colors"
           >
             <ChevronIcon open={reposOpen} />

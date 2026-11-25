@@ -12,6 +12,7 @@ export interface ChatMessage {
   timestamp?: string;
   runSessionId?: string;       // backend session that produced this reply; what a rating is sent against
   rating?: 'up' | 'down';      // the user's rating of that reply, once saved
+  retry?: { prompt: string; mode: 'ask' | 'editor' };   // a failed run's request, resent by "Try again"
 }
 
 export interface ChatSession {
