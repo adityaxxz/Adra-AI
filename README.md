@@ -15,12 +15,12 @@ A multi-agent Codebase Intelligence platform that turns natural-language prompts
 
 Adra-AI now features a full SaaS architecture with:
 
-- **Backend**: FastAPI on Heroku (container stack), Heroku Postgres, Qdrant Cloud
+- **Backend**: FastAPI on Heroku (container stack, Basic dyno), PostgreSQL on Neon, Qdrant Cloud
 - **Frontend**: Next.js with React, TypeScript, and Tailwind CSS (Vercel)
 - **Authentication**: OAuth 2.0 (Google & GitHub)
 - **Real-time Updates**: WebSocket support with server-side keepalive pings (Heroku 55s timeout mitigation)
-- **Observability**: LangSmith tracing for end-to-end agent pipeline visibility
-- **Deployment**: Heroku container stack (`git push heroku main`) + Vercel (frontend)
+- **Observability**: LangSmith and Langfuse tracing, per-run token/cost/latency metrics, and an evaluation suite with online LLM-judge grading
+- **Deployment**: Heroku container stack (`git push heroku main`) + Vercel (frontend, deploys from GitHub)
 
 ### Architecture Diagram
 
@@ -55,7 +55,7 @@ flowchart TB
     end
 
     subgraph Observability["Observability"]
-        LS[LangSmith Tracing]
+        LS[LangSmith + Langfuse Tracing]
     end
     
     UI --> API
@@ -165,18 +165,19 @@ flowchart LR
 - **Step-by-step implementation** — Builds each file in dependency order with live context from prior files
 - **Cross-file integration pass** — Post-coder optimization to resolve cross-file import, export, and route mismatch bugs
 - **Context & Token Management** — Smart context truncation (4,000 chars for repo context, 8,000 chars for project context) to prevent token overflow
-- **Throttling & Fault Tolerance** — Custom rate limiting (2.1s minimum interval) with exponential back-off and 5x retries to prevent API resource exhaustion
+- **Throttling & Fault Tolerance** — A 2.1 s minimum interval between LLM calls, up to 5 retries, and provider rate limits (429s with a short retry hint, e.g. Groq's tokens-per-minute cap) waited out instead of failing the run; daily quotas fail fast with a clear message
 - **Iterative Loop Limits** — Caps recursion depth at 100 steps to prevent infinite execution loops during agent runs
-- **Pluggable LLM backend** — Swap between Google Gemini, Groq, and NVIDIA NIM models via a single `LLM_PROVIDER` environment variable
+- **Pluggable LLM backend** — Swap between Google Gemini, Groq, and NVIDIA NIM models via a single `LLM_PROVIDER` environment variable (production runs Groq `openai/gpt-oss-120b`)
 - **Sandboxed File I/O** — All agent file operations are path-validated within a configurable project root to prevent directory traversal
 
 ### Observability & Debugging
 - **LangSmith Integration** — Full end-to-end tracing of every LLM call, agent node transition, tool invocation, and graph traversal across all three pipeline modes. Enables real-time debugging, latency profiling, token usage analysis, and run replay directly from the LangSmith dashboard
-- **OpenTelemetry Support** — Distributed tracing across the FastAPI backend and agent pipeline using `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-grpc` for production observability
+- **Langfuse Integration** — Optional second tracer running alongside LangSmith (one trace per run, grouped by session); enabled by setting the `LANGFUSE_*` keys, otherwise never imported
+- **Run metrics** — Every finished run is saved with its tokens, cost, latency, retries and per-agent breakdown, plus the prompt versions that produced it
 - **Structured Logging** — Centralized `logging` module across all backend modules with standardized JSON error response shapes via `error_handlers.py`
 
 ### Repository-Aware Features
-- **Repository scanning** — Automatically scans repositories for supported file types (Python, JavaScript, TypeScript, HTML, CSS, Markdown, JSON)
+- **Repository scanning** — Automatically scans repositories for supported file types (Python, JavaScript, TypeScript, HTML, CSS, Markdown, JSON, Go)
 - **Structure-Aware Code Chunking** — Custom syntax-aware chunker supporting 9 file extensions / 7 core programming languages (AST-based for Python, regex for JS/TS)
 - **Whole-file Fallback Chunks** — Files ≤80 lines always receive an additional whole-file chunk to guarantee complete content retrieval for small modules
 - **SHA256 Incremental Indexing** — File hashing pipeline to only re-index new/modified files, optimizing performance and vector store writes
@@ -193,9 +194,12 @@ flowchart LR
 ### SaaS Platform Features
 - **OAuth authentication** — Secure sign-in with Google and GitHub; JWTs signed with HS256 via `python-jose` with 24-hour expiry
 - **User management** — Multi-tenant support with user-specific projects and repositories; role-based access (`UserRole.USER` / `UserRole.ADMIN`)
-- **Admin bypass** — Configurable `ADMIN_EMAILS` list to exempt specific accounts from usage quotas
+- **Admin bypass** — Configurable `ADMIN_EMAILS` list to exempt specific accounts from the project and repository count limits (the per-user request limits below apply to everyone)
 - **Project management** — Create, view, and manage generated projects; files stored as structured JSON in PostgreSQL
-- **Repository management** — Connect and index multiple repositories
+- **Repository management** — Connect and index repositories from GitHub or a local folder upload, or open a generated project as a repository to keep editing it
+- **Edit review** — Every edit is shown as a per-file diff with Accept / Reject; rejecting restores the original file (or removes a file the run created)
+- **Downloads** — Download any project or repository as a zip
+- **Feedback** — Thumbs up/down on chat replies; every thumbs-down is graded by an LLM judge for the admin evals page
 - **Real-time updates** — WebSocket-based progress tracking for long-running tasks with per-session connection pooling
 - **Background processing** — Async task processing via `ThreadPoolExecutor` bridging the async FastAPI event loop with synchronous LangGraph agents
 - **Async Database** — SQLAlchemy 2.0 async ORM with `asyncpg` driver and proper session lifecycle management
@@ -208,32 +212,32 @@ flowchart LR
 | Layer | Tools |
 |-------|-------|
 | Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| Backend | FastAPI, Python 3.12+, SQLAlchemy 2.0 (async) |
-| Database | PostgreSQL 16 + asyncpg |
-| Vector Store | Qdrant 1.12.0 (Cloud) |
+| Backend | FastAPI, Python 3.11, SQLAlchemy 2.0 (async) |
+| Database | PostgreSQL + asyncpg (production: Neon, Postgres 18; local: Postgres 16 via Docker Compose) |
+| Vector Store | Qdrant (production: Qdrant Cloud; local: Qdrant v1.12.0 via Docker Compose) |
 | Orchestration | LangGraph 1.2, LangChain |
-| LLM (default) | Google Gemini 2.5 Flash |
-| LLM (optional) | Groq (`openai/gpt-oss-120b`), NVIDIA NIM (`meta/llama-3.3-70b-instruct`) |
+| LLM (production) | Groq (`openai/gpt-oss-120b`) |
+| LLM (other providers) | Google Gemini 2.5 Flash (the code's default), NVIDIA NIM (`nvidia/nemotron-3.5-lightning-30b-a3b`) |
 | Embeddings | Google Gemini Embedding (`models/gemini-embedding-001`) |
-| Observability | LangSmith (tracing & debugging), OpenTelemetry (OTLP/gRPC) |
+| Observability | LangSmith, Langfuse (tracing & debugging), run metrics in PostgreSQL |
+| Evaluation | Golden dataset + harness, Gemini LLM judge (`gemini-3.5-flash-lite`), manual CI quality gate, online grading |
 | Authentication | OAuth 2.0 (Google, GitHub), JWT (HS256 via python-jose) |
 | Real-time | WebSockets |
 | Deployment | Heroku (container stack, Basic dyno), Vercel |
-| CI/CD | Heroku Git (`git push heroku main`) |
+| CI/CD | GitHub Actions (tests, type-check, build on every push; manual eval gate), Heroku Git (`git push heroku main`), Vercel (deploys from GitHub) |
 | State Management | Zustand |
 | Data Fetching | TanStack Query |
-| Migrations | Alembic |
+| Schema changes | `create_all` at startup for new tables, plus `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for new columns (no Alembic) |
 
 ## Prerequisites
 
-- Docker and Docker Compose
+- Docker and Docker Compose (for local PostgreSQL and Qdrant)
+- Python 3.11 and Node.js 18+
 - OAuth credentials (Google and/or GitHub)
 - LLM API keys (Google Gemini, Groq, or other supported providers)
 - (Optional) LangSmith API key for tracing and observability
 
 ## Installation
-
-### Option A — Docker Deployment (Recommended for Web App)
 
 1. Clone the repository:
 ```bash
@@ -248,12 +252,25 @@ cp .env.example .env
 
 Open `.env` and fill in your credentials. Refer to [.env.example](.env.example) for descriptions of each environment variable.
 
-3. Start all services:
+3. Start PostgreSQL and Qdrant (Docker Compose runs only these two; the backend and frontend run on your machine):
 ```bash
 docker-compose up -d
 ```
 
-4. Access the application:
+4. Start the backend (from the repository root):
+```bash
+pip install -r requirements.txt
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+5. Start the frontend (in a second terminal; it calls `NEXT_PUBLIC_API_URL`, default `http://localhost:8000`):
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+6. Access the application:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
@@ -325,6 +342,7 @@ Replaced naive character-based text splitting with a custom syntax-aware chunker
 Every agent uses `llm.with_structured_output(schema, method="json_schema")` to enforce type-safe responses:
 - `Plan` — Validates app name, description, tech stack, features, and file list
 - `TaskPlan` — Validates ordered implementation steps with file paths and task descriptions
+- `EditPlan` — Validates the Edit Planner's one-line summary and ordered list of file edits (repository editing)
 - `CoderOutput` — Validates complete file content returned by the Coder agent
 - `IntegrationResult` — Validates a list of `FileUpdate` objects for cross-file integration fixes
 
@@ -336,7 +354,13 @@ Once the backend is running, the interactive Swagger UI API documentation is ava
 
 Key endpoints include:
 - `POST /projects` - Create a new project
+- `POST /generate` - Start an agent run (project generation, repository edit, or question); returns at once, progress streams over the WebSocket
+- `POST /repositories` / `POST /upload-folder` - Connect a GitHub repository / upload a local folder
 - `POST /repositories/{id}/index` - Index a repository
+- `POST /repositories/{id}/edits/{session_id}/resolve` - Accept or reject an edit run's files
+- `GET /projects/{id}/download`, `GET /repositories/{id}/download` - Download as a zip
+- `POST /feedback` - Thumbs up/down on a reply
+- `GET /admin/evals` - Online evaluation results (admins only)
 - `WS /ws/{session_id}` - WebSocket for real-time progress updates
 
 ## 🚀 Deployment
@@ -346,14 +370,15 @@ The live project is fully deployed across three managed services:
 
 * **Frontend**: Deployed on [Vercel](https://vercel.com) as a serverless Next.js app.
 * **Backend**: Deployed on [Heroku](https://heroku.com) using the **container stack** (Docker-based dyno).
-  - `heroku.yml` at the repo root defines the container build pointing at `backend/Dockerfile`.
+  - `heroku.yml` at the repo root builds the root `Dockerfile` (Python 3.11 image with `agent/`, `backend/` and `evals/`).
   - Deployed via `git push heroku main` — Heroku builds the Docker image and releases it automatically.
   - Binds to Heroku's dynamic `$PORT` at runtime (`uvicorn main:app --port ${PORT:-8000}`).
   - Heroku's router handles HTTPS termination and WebSocket proxying natively (no Nginx needed).
   - Server-side WebSocket keepalive pings are implemented to prevent Heroku's 55-second idle connection timeout from dropping active agent runs.
-* **Database**: [Heroku Postgres](https://www.heroku.com/postgres) (`essential-0` plan) provisioned as an add-on.
-  - `DATABASE_URL` is automatically injected by Heroku as a config var — no manual setup.
-  - `backend/main.py` normalizes the `postgres://` scheme Heroku injects to `postgresql+asyncpg://` for SQLAlchemy.
+* **Database**: [Neon](https://neon.tech) serverless PostgreSQL (external, not a Heroku add-on).
+  - The Neon connection string is set as the `DATABASE_URL` config var on Heroku.
+  - `backend/main.py` converts `postgres://` / `postgresql://` to `postgresql+asyncpg://` for SQLAlchemy, and moves Neon's `sslmode` / `channel_binding` URL parameters into asyncpg's SSL settings (asyncpg rejects them in the URL).
+  - Tables are created at startup; new columns are added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so deploys need no manual migration step.
 * **Vector Store**: [Qdrant Cloud](https://qdrant.tech/) (external managed cluster) connected via `QDRANT_URL` + `QDRANT_API_KEY` config vars.
 
 > **Note:** The `deploy/legacy-droplet/` directory contains the previous DigitalOcean Docker Compose + Nginx setup, kept for reference. It is not used in the current Heroku deployment.
@@ -364,9 +389,8 @@ The live project is fully deployed across three managed services:
 # One-time setup
 heroku create adra-ai-backend
 heroku stack:set container -a adra-ai-backend
-heroku addons:create heroku-postgresql:essential-0 -a adra-ai-backend
 
-# Sync all config vars from your local .env.prod
+# Sync all config vars (including DATABASE_URL = your Neon connection string) from your local .env.prod
 bash scripts/sync-heroku-config.sh adra-ai-backend
 
 # Deploy
@@ -376,16 +400,14 @@ git push heroku main
 heroku logs --tail -a adra-ai-backend
 ```
 
-For the full step-by-step migration runbook, see [heroku.md](heroku.md).
-
 ## Development
 
 ### Backend Development
 
 ```bash
-cd backend
+# from the repository root
 pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Frontend Development
@@ -399,7 +421,7 @@ npm run dev
 ### Running Tests
 
 ```bash
-# Backend — from the repository root (about 25 seconds)
+# Backend — from the repository root, on Python 3.11 like CI (about 3 minutes, ~510 tests)
 pip install -r requirements.txt -r requirements-test.txt
 pytest
 
@@ -434,7 +456,11 @@ Adra-AI/
 ├── agent/                 # Agent pipeline implementation
 │   ├── graph.py          # LangGraph orchestration (3 compiled graphs)
 │   ├── llm_client.py     # LLM client with throttling, retries & multi-provider support
-│   ├── prompts.py        # Agent prompt templates (Planner, Edit Planner, Architect, Coder, Integrator, Explainer)
+│   ├── rate_limit.py     # Waits out provider rate limits (429 retry hints)
+│   ├── prompts.py        # Versioned prompt templates (Planner, Edit Planner, Architect, Coder, Integrator, Explainer)
+│   ├── guardrails.py     # Replaces credentials the agents write with placeholders
+│   ├── observability.py  # Run metrics, LangSmith/Langfuse tracing helpers
+│   ├── progress.py       # Per-run progress messages shown in the chat
 │   ├── state.py          # Pydantic state schemas for type-safe agent I/O
 │   ├── tools.py          # Sandboxed file I/O tools (read_file, write_file, run_cmd)
 │   └── repository/       # Repository-aware RAG pipeline
@@ -449,14 +475,18 @@ Adra-AI/
 ├── backend/              # FastAPI backend
 │   ├── main.py           # REST API endpoints + lifespan management
 │   ├── auth.py           # OAuth 2.0 handlers + JWT (HS256) authentication
-│   ├── db_models.py      # SQLAlchemy ORM models (User, Project, Repository, Session)
+│   ├── db_models.py      # SQLAlchemy ORM models (User, Project, Repository, Session, AgentRun, RunStep, Feedback, EvalResult)
 │   ├── agent_integration.py  # Bridge layer: agents ↔ database
 │   ├── websocket_manager.py  # WebSocket connection manager + ProgressReporter
 │   ├── background_tasks.py   # Async task executor (ThreadPoolExecutor bridge)
 │   ├── run_store.py          # Persists each finished agent run (tokens, cost, per-agent steps)
 │   ├── feedback_store.py     # Saves a user's thumbs up/down on a run (POST /feedback)
+│   ├── online_eval.py        # LLM judge grades 1 in 10 runs + every thumbs-down (admin: /admin/evals)
+│   ├── guardrails.py         # Per-user request limits and request size cap
+│   ├── edit_review.py        # Accept/reject an edit run's files
+│   ├── repo_zip.py           # Zip downloads
 │   ├── error_handlers.py     # Centralized error handling middleware
-│   └── rate_limit.py         # slowapi rate limiter configuration
+│   └── rate_limit.py         # slowapi per-IP limiter (currently disabled: behind Heroku's router every request shares an IP)
 ├── frontend/             # Next.js frontend
 │   ├── app/
 │   ├── components/
@@ -465,7 +495,8 @@ Adra-AI/
 ├── tests/                # pytest suite (unit + Postgres integration)
 ├── evals/                # golden dataset + harness that scores the real agents
 ├── .github/workflows/    # CI: backend tests, frontend type-check + build
-├── docker-compose.yml    # Docker services
+├── docker-compose.yml    # Local PostgreSQL + Qdrant
+├── Dockerfile            # Production image (built by heroku.yml)
 ├── main.py              # CLI entry point
 ├── requirements.txt     # Python dependencies (what Heroku installs)
 └── requirements-test.txt # Test dependencies (pytest)
@@ -498,9 +529,11 @@ CREATE SCHEMA public;
 ```
 
 ### Vector Store Issues
+Each web-app repository has its own collection, `repo_<repository id with - replaced by _>`; the CLI uses `repo_chunks`.
 ```bash
-# Reset Qdrant
-docker-compose exec qdrant curl -X DELETE http://localhost:6333/collections/repo_chunks
+# List collections, then delete one (re-indexing the repository recreates it)
+curl http://localhost:6333/collections
+curl -X DELETE http://localhost:6333/collections/<collection name>
 ```
 
 ## Contributing
