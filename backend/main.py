@@ -15,7 +15,7 @@ from typing import Optional, List, Dict, Literal
 from pydantic import BaseModel, ValidationError, Field
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from slowapi.errors import RateLimitExceeded
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -33,11 +33,12 @@ from backend.auth import (
     oauth_callback, GoogleOAuth, GitHubOAuth, get_current_user,
     Token, OAuthConfig
 )
-from backend.db_models import Base, User, Project, Repository, Session, SessionMode, ProjectStatus
+from backend.db_models import Base, User, UserRole, Project, Repository, Session, SessionMode, ProjectStatus, AgentRun, EvalResult, Feedback
 from backend.websocket_manager import manager, ProgressReporter
 from backend.background_tasks import task_manager
 from backend.run_store import record_agent_run
 from backend.feedback_store import save_feedback
+from backend.online_eval import ON_THUMBS_DOWN, grade_run, grade_run_in_new_session, is_sampled
 from backend.edit_review import apply_review
 from agent.llm_client import LLM_PROVIDER, MODEL_NAME
 from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
@@ -1321,7 +1322,7 @@ async def _run_generation_task(
                 )
 
             # Keep what the run cost/did, for evaluation. Never raises (see run_store).
-            await record_agent_run(
+            run = await record_agent_run(
                 db, session_id=session_id, mode=mode.value, prompt=prompt,
                 task_result=task_result, provider=LLM_PROVIDER, model=MODEL_NAME,
             )
@@ -1333,6 +1334,10 @@ async def _run_generation_task(
                 db_session.is_active = False
                 db_session.completed_at = datetime.utcnow()
                 await db.commit()
+
+            # §2.5 online evals: the user already has their result; grade a steady 1 in 10 runs. Never raises.
+            if run is not None and is_sampled(run.id):
+                await grade_run(db, run.id, "sample")
 
         except Exception as e:
             logger.error(f"Background generation task failed: {e}", exc_info=True)
@@ -1577,6 +1582,7 @@ async def list_sessions(
 @app.post("/feedback")
 async def submit_feedback(
     request: FeedbackRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1590,7 +1596,62 @@ async def submit_feedback(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No finished run found for that session"
         )
+    # §2.5: every thumbs-down gets graded by the judge, after the response is sent.
+    if feedback.rating == "down" and ON_THUMBS_DOWN:
+        background_tasks.add_task(grade_run_in_new_session, async_session, feedback.run_id, "thumbs_down")
     return {"run_id": feedback.run_id, "rating": feedback.rating}
+
+
+async def require_admin(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """Only users whose role is ADMIN (set directly in the database)."""
+    user = await db.get(User, current_user["sub"])
+    if user is None or user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
+    return current_user
+
+
+@app.get("/admin/evals")
+async def admin_evals(
+    limit: int = Query(50, ge=1, le=200),
+    _admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """§2.5 online evals: recent judge verdicts on real runs, plus a 7-day summary per mode."""
+    rows = (await db.execute(
+        select(EvalResult, AgentRun).join(AgentRun, AgentRun.id == EvalResult.run_id)
+        .order_by(EvalResult.created_at.desc()).limit(limit)
+    )).all()
+    run_ids = [run.id for _, run in rows]
+    ratings = {}
+    if run_ids:
+        for run_id, rating in (await db.execute(select(Feedback.run_id, Feedback.rating).where(Feedback.run_id.in_(run_ids)))).all():
+            ratings[run_id] = rating
+
+    since = datetime.utcnow() - timedelta(days=7)
+    recent = (await db.execute(
+        select(AgentRun.mode, EvalResult.score, EvalResult.passed)
+        .join(AgentRun, AgentRun.id == EvalResult.run_id).where(EvalResult.created_at >= since)
+    )).all()
+    summary = []
+    for mode in sorted({m for m, _, _ in recent}):
+        judged = [(sc, ok) for m, sc, ok in recent if m == mode and ok is not None]
+        summary.append({
+            "mode": mode,
+            "graded": sum(1 for m, _, _ in recent if m == mode),
+            "judged": len(judged),
+            "avg_score": round(sum(sc or 0 for sc, _ in judged) / len(judged), 3) if judged else None,
+            "pass_rate": round(sum(1 for _, ok in judged if ok) / len(judged), 3) if judged else None,
+        })
+
+    return {
+        "summary": summary,
+        "items": [{
+            "run_id": run.id, "graded_at": ev.created_at.isoformat() if ev.created_at else None,
+            "mode": run.mode, "trigger": ev.trigger, "score": ev.score, "passed": ev.passed,
+            "rationale": ev.rationale, "evaluator": ev.evaluator_name, "user_rating": ratings.get(run.id),
+            "prompt": (run.user_prompt or "")[:300],
+        } for ev, run in rows],
+    }
 
 
 @app.post("/repositories/{repository_id}/edits/{session_id}/resolve")

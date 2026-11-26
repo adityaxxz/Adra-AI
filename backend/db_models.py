@@ -203,3 +203,23 @@ class Feedback(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class EvalResult(Base):
+    """A judge's verdict on one AgentRun (online evals, §2.5): a 1-in-10 sample of runs plus every thumbs-down.
+
+    One verdict per (run, evaluator). Deleting the run (which happens when its chat is deleted) deletes its verdicts.
+    Owner-facing only (admin page); never shown to users.
+    """
+    __tablename__ = "eval_results"
+    __table_args__ = (UniqueConstraint("run_id", "evaluator_name", name="uq_eval_results_run_evaluator"),)
+
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    evaluator_name = Column(String, nullable=False)          # e.g. "judge:gemini-3.5-flash-lite"
+    trigger = Column(String, nullable=False, index=True)     # "sample" | "thumbs_down"
+    score = Column(Float)                                     # 0-1; None when the judge was unavailable
+    passed = Column(Boolean)                                  # None when the judge was unavailable
+    rationale = Column(Text)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

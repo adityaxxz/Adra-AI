@@ -98,6 +98,7 @@ async def test_new_tables_are_created_on_boot_without_a_migration(db_session_mak
     monkeypatch.setattr(M, "engine", engine)
     monkeypatch.setattr(M, "async_session", db_session_maker)
     async with engine.begin() as conn:
+        await conn.execute(text("DROP TABLE eval_results"))
         await conn.execute(text("DROP TABLE feedback"))
         await conn.execute(text("DROP TABLE run_steps"))
         await conn.execute(text("DROP TABLE agent_runs"))
@@ -108,7 +109,7 @@ async def test_new_tables_are_created_on_boot_without_a_migration(db_session_mak
     async with engine.connect() as conn:
         tables = {r[0] for r in await conn.execute(text(
             "select table_name from information_schema.tables where table_schema = 'public'"))}
-    assert {"agent_runs", "run_steps", "feedback"} <= tables
+    assert {"agent_runs", "run_steps", "feedback", "eval_results"} <= tables
 
 
 async def test_repository_files_snapshot_round_trips_through_the_json_column(db_session_maker):

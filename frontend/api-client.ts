@@ -173,6 +173,35 @@ export const feedbackAPI = {
   },
 };
 
+export interface AdminEvalSummary {
+  mode: string;
+  graded: number;
+  judged: number;
+  avg_score: number | null;
+  pass_rate: number | null;
+}
+
+export interface AdminEvalItem {
+  run_id: string;
+  graded_at: string | null;
+  mode: string;
+  trigger: 'sample' | 'thumbs_down';
+  score: number | null;
+  passed: boolean | null;
+  rationale: string | null;
+  evaluator: string;
+  user_rating: 'up' | 'down' | null;
+  prompt: string;
+}
+
+// Admin-only (users.role = ADMIN): the judge's verdicts on real runs (online evals).
+export const adminAPI = {
+  listEvals: async (limit = 50): Promise<{ summary: AdminEvalSummary[]; items: AdminEvalItem[] }> => {
+    const response = await api.get('/admin/evals', { params: { limit } });
+    return response.data;
+  },
+};
+
 export const editsAPI = {
   // Accept/reject the files one editing run changed. `edited` holds hand-edited content for accepted files.
   resolve: async (

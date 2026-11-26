@@ -17,6 +17,8 @@ COPY agent/ ./agent/
 
 # Copy backend code (all files, including __init__.py)
 COPY backend/ ./backend/
+# The LLM judge (evals/evaluators/judge.py) grades real runs for the online evals (backend/online_eval.py).
+COPY evals/ ./evals/
 
 # main.py must also live at /app root (uvicorn main:app)
 COPY backend/main.py .
