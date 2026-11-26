@@ -258,3 +258,16 @@ def test_a_rate_limit_waits_the_provider_delay_then_succeeds():
     j = J.Judge(invoke=Stub(RuntimeError("429 RESOURCE_EXHAUSTED per minute. retry in 12s"), code()), min_interval=0, sleep=sleeps.append)
     assert j.judge_code(EDIT, AFTER, FIX).passed is True
     assert 13 in sleeps and j.rate_limit_hits == 1 and j.exhausted is None
+
+
+def test_the_default_pace_stays_under_the_free_tier_requests_per_minute():
+    """gemini-3.5-flash-lite's free tier allows 15 requests a minute (AI Studio rate-limit page, 2026-11-26)."""
+    assert 60 / J.MIN_INTERVAL < J.FREE_TIER_RPM, f"{60 / J.MIN_INTERVAL:.1f} requests/minute"
+
+
+def test_the_pace_is_enforced_between_calls_including_retries():
+    sleeps = []
+    j = J.Judge(invoke=Stub(ValueError("schema mismatch"), code()), sleep=sleeps.append)
+    j._last_call = float("inf")                     # pretend the previous call was just made
+    j.judge_code(EDIT, AFTER, FIX)
+    assert len(sleeps) == 2 and all(s > 0 for s in sleeps), "both the first try and the retry must wait"

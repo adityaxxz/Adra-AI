@@ -1,21 +1,21 @@
 {
-  "created": "2026-11-25T18:42:47.292884+00:00",
-  "git_sha": "8af7ef9",
+  "created": "2026-11-25T19:53:31.360880+00:00",
+  "git_sha": "1f1eb1b",
   "agent": {
     "provider": "groq",
     "model": "openai/gpt-oss-120b"
   },
-  "judge": "gemini-2.5-flash-lite",
+  "judge": "gemini-3.5-flash-lite",
   "exec": true,
-  "passed": 11,
+  "passed": 12,
   "total": 15,
   "cases": {
-    "edit-01-todo-delete": "failed",
+    "edit-01-todo-delete": "passed",
     "edit-04-truncate-bug": "passed",
     "edit-06-median": "passed",
     "edit-07-counter-reset": "passed",
     "edit-09-todo-auth": "failed",
-    "gen-01-todo-web": "passed",
+    "gen-01-todo-web": "failed",
     "gen-03-blog-api": "failed",
     "gen-04-wordfreq": "passed",
     "gen-05-bank-account": "passed",
@@ -23,7 +23,7 @@
     "qa-01-todo-storage": "passed",
     "qa-03-todo-auth-unanswerable": "passed",
     "qa-04-todo-missing-id": "passed",
-    "qa-05-todo-get-before-create": "failed",
+    "qa-05-todo-get-before-create": "passed",
     "qa-11-counter-about-short": "passed"
   }
 }
