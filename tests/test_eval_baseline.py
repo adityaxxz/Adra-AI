@@ -152,3 +152,11 @@ def test_the_gate_runs_the_agreed_configuration_against_the_saved_reference():
 def test_the_report_is_attached_even_when_the_gate_fails():
     upload = next(s for s in _workflow()["jobs"]["evals"]["steps"] if "upload-artifact" in str(s.get("uses", "")))
     assert upload["if"] == "always()" and upload["with"]["path"] == "eval-report.json"
+
+
+def test_the_gate_installs_pytest_because_some_exec_checks_run_the_projects_own_tests():
+    """The first CI run failed gen-05 "its own tests pass" with "No module named pytest": the runner only had
+    requirements.txt, while the reference was produced on a machine with pytest."""
+    installs = [s["run"] for s in _workflow()["jobs"]["evals"]["steps"] if "pip install" in str(s.get("run", ""))]
+    assert any("requirements-test.txt" in cmd for cmd in installs), installs
+    assert "pytest" in (ROOT / "requirements-test.txt").read_text(encoding="utf-8")

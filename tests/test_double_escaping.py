@@ -152,3 +152,26 @@ def test_a_new_file_needs_more_evidence_before_its_quotes_are_touched():
     assert G._fix_escaped_quotes('<a href=\\"x\\">\n', "new.html", "") == '<a href=\\"x\\">\n'
     many = '<a href=\\"1\\" title=\\"2\\">\n'
     assert G._fix_escaped_quotes(many, "new.html", "") == '<a href="1" title="2">\n'
+
+
+def test_a_file_with_one_quote_left_unescaped_is_still_repaired():
+    """Seen in the CI quality gate (2026-11-26, editing mode): every quote was escaped except the file's opening \"\"\", so
+    decoding the text as one JSON string failed and the broken storage.py was saved as-is."""
+    from pathlib import Path
+
+    broken = (Path(__file__).parent / "samples" / "ci_double_escaped_storage.txt").read_text(encoding="utf-8")
+    with pytest.raises(SyntaxError):
+        ast.parse(broken)
+    fixed = G._fix_double_escaping(broken, "storage.py")
+    tree = ast.parse(fixed)
+    names = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
+    assert {"load_todos", "save_todos", "add_todo", "mark_done"} <= names, names
+    assert fixed.startswith('"""Todo persistence: a single JSON file on disk."""\nimport json\n')
+
+
+def test_an_escaped_backslash_inside_a_string_literal_survives_decoding():
+    """Double-escaped `print("a\\nb")` must decode to code that still prints a literal backslash-n, not a newline."""
+    source = 'x = 1\nprint("a\\nb")\ny = 2\nz = 3\n'
+    doubled = source.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+    assert "\n" not in doubled
+    assert G._fix_double_escaping(doubled, "x.py") == source

@@ -49,6 +49,15 @@ def _is_valid(filepath: str, text: str) -> Optional[bool]:
     return None
 
 
+_JSON_ESCAPE = re.compile(r'\\(u[0-9a-fA-F]{4}|["\\/bfnrt])')
+_SIMPLE_ESCAPES = {'"': '"', '\\': '\\', '/': '/', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t'}
+
+
+def _unescape_one(m: re.Match) -> str:
+    code = m.group(1)
+    return chr(int(code[1:], 16)) if code[0] == 'u' else _SIMPLE_ESCAPES[code]
+
+
 def _fix_double_escaping(content: str, filepath: str) -> str:
     r"""Undo a file the model returned JSON-escaped twice.
 
@@ -60,9 +69,11 @@ def _fix_double_escaping(content: str, filepath: str) -> str:
     body = content.strip()
     if "\n" in body or body.count("\\n") < 3:
         return content
-    try:
-        fixed = json.loads(f'"{body}"', strict=False)
-    except ValueError:
+    # Decode the escape sequences themselves rather than parsing the text as one JSON string: the model sometimes
+    # leaves a quote unescaped (seen in CI: every quote escaped except the file's opening """), and a JSON parse
+    # then rejects the whole file although it is plainly double-escaped.
+    fixed = _JSON_ESCAPE.sub(_unescape_one, body)
+    if fixed == body:
         return content
     if _is_valid(filepath, content) or _is_valid(filepath, fixed) is False:
         return content
