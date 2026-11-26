@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { repositoriesAPI, generationAPI, projectsAPI, feedbackAPI, editsAPI } from '../../../api-client';
 import { saveBlob, zipName } from '../../../lib/downloadBlob';
+import { userErrorMessage } from '../../../lib/apiError';
 import HoldButton from '../../../components/HoldButton';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
@@ -604,10 +605,7 @@ function RepositoryPageInner() {
       });
     } catch (e: any) {
       // The API explains refusals the user can act on (rate limit, request too long); show those as they are.
-      // Error bodies are {error, message} (backend/error_handlers.py); only 4xx messages are meant for users.
-      const status = e?.response?.status;
-      const message = e?.response?.data?.message;
-      addFailureMessage(status >= 400 && status < 500 && typeof message === 'string' ? message : 'Something went wrong. Please try again.');
+      addFailureMessage(userErrorMessage(e, 'Something went wrong. Please try again.'));
     }
   };
 

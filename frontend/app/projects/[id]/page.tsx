@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { projectsAPI, generationAPI, repositoriesAPI } from '../../../api-client';
 import { saveBlob, zipName } from '../../../lib/downloadBlob';
+import { userErrorMessage } from '../../../lib/apiError';
 import HoldButton from '../../../components/HoldButton';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
@@ -160,7 +161,7 @@ export default function ProjectPage() {
       router.push(`/repositories/${repository_id}`);
     } catch (error: any) {
       console.error(error);
-      alert(error?.response?.data?.detail || 'Failed to open the project as a repository.');
+      alert(userErrorMessage(error, 'Failed to open the project as a repository.'));
       setOpeningAsRepo(false);
     }
   };
@@ -187,8 +188,7 @@ export default function ProjectPage() {
       router.push('/dashboard');
     } catch (error: any) {
       console.error('Failed to delete project:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to delete project. Please try again.';
-      alert(`Error: ${errorMessage}`);
+      alert(userErrorMessage(error, 'Failed to delete project. Please try again.'));
       setDeleteConfirmOpen(false);
     }
   };
