@@ -1,5 +1,6 @@
 """Each structural evaluator against a broken input it must catch and a good one it must not flag."""
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -253,6 +254,17 @@ def test_exec_checks_run_in_a_scratch_dir_with_setup_files_and_no_secrets(tmp_pa
         "name": "env and files",
         "setup_files": {"data.txt": "42"},
         "snippet": "import os\nassert open('data.txt').read() == '42'\nassert 'GROQ_API_KEY' not in os.environ and 'GOOGLE_API_KEY' not in os.environ",
+    }])
+    assert o.passed is True, o.detail
+
+
+def test_exec_checks_get_a_home_dir_that_is_the_scratch_dir_not_the_real_one():
+    """Without a home dir, pytest plugins that look for one (deepeval's) crash every project's own tests (exit 3)."""
+    real_home = str(Path.home())
+    (o,) = S.run_exec_checks({}, [{
+        "name": "home",
+        "snippet": f"import os, pathlib\nh = pathlib.Path.home()\nassert h.resolve() == pathlib.Path.cwd().resolve(), h\n"
+                   f"assert str(h) != {real_home!r}",
     }])
     assert o.passed is True, o.detail
 

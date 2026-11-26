@@ -465,7 +465,9 @@ def run_exec_checks(files: dict, checks: list[dict], default_timeout: int = 20) 
                 (Path(td) / p).write_text(text, encoding="utf-8")
             cmd = [sys.executable, "-c", chk["snippet"]] if "snippet" in chk else \
                 [sys.executable if c == "python" else c for c in chk["cmd"]]
-            env_run = {**env, "TEMP": td, "TMP": td}
+            # The scratch dir is also the home dir: tools that need one (pytest plugins installed on this machine, e.g.
+            # deepeval's) crash without it, and generated code writing to ~ stays out of the real home.
+            env_run = {**env, "TEMP": td, "TMP": td, "HOME": td, "USERPROFILE": td}
             try:
                 r = subprocess.run(cmd, cwd=td, env=env_run, capture_output=True, text=True,
                                    timeout=chk.get("timeout", default_timeout))
