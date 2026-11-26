@@ -145,3 +145,4 @@ latest.dump
 # run reports; and exported candidates, which contain real user prompts
 evals/reports/
 evals/datasets/seed_candidates.yaml
+resume_points_description.md

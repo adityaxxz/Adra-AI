@@ -199,7 +199,8 @@ flowchart LR
 - **Real-time updates** — WebSocket-based progress tracking for long-running tasks with per-session connection pooling
 - **Background processing** — Async task processing via `ThreadPoolExecutor` bridging the async FastAPI event loop with synchronous LangGraph agents
 - **Async Database** — SQLAlchemy 2.0 async ORM with `asyncpg` driver and proper session lifecycle management
-- **Rate limiting** — Configurable rate limits for API endpoints (auth: 5/min, generation: 2/hr, general API: 60/min)
+- **Per-user usage limits** — Each user may start 20 agent requests per hour and 40 per day (chat questions, edits and new projects), counted from their sessions in PostgreSQL so limits survive restarts; refused requests get a 429 with `Retry-After` and a plain "try again in N minutes" message. Requests over 8,000 characters are rejected (422). All configurable via env vars
+- **Guardrails** — Repository text placed in prompts is fenced and marked as untrusted data (prompt-injection defence for uploaded repos), and credentials the agents write into files (API keys, private keys) are replaced with placeholders and reported to the user
 - **Error handling** — Comprehensive error handling and logging with standardized JSON error responses for HTTP, validation, SQLAlchemy, and generic exceptions
 
 ## Tech Stack
@@ -423,6 +424,8 @@ checks), optional executable checks, retrieval metrics and an LLM judge. See
 [`evals/README.md`](evals/README.md). It makes real LLM calls, so it is not part of `pytest`.
 
 A manual GitHub Actions workflow (**Evals (quality gate)**) runs the same evals and fails if clearly fewer cases pass than a saved reference run. In production, an LLM judge grades a sample of real runs plus every thumbs-down reply; admins see the results at `/admin/evals`.
+
+Prompts are versioned (`PROMPT_VERSIONS` in `agent/prompts.py`). Every saved run, eval report and gate reference records the prompt versions that produced it, and a test fails if a prompt's text changes without its version being bumped.
 
 ## Project Structure
 
