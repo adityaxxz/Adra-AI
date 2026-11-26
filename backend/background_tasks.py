@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent.graph import project_generation_agent, repository_editing_agent, question_answering_agent
 from agent.repository.service import index_repository, clone_github_repo
 from backend.websocket_manager import ProgressReporter, manager
+from agent.guardrails import describe_redactions
 from agent.repository.vector_store import set_active_collection
 from agent.llm_client import graph_run_config
 from agent.observability import start_run, get_current_run, record_agent_run
@@ -88,14 +89,16 @@ def _only_changed(edited: Dict[str, str], originals: Dict[str, Optional[str]]) -
     return {p: c for p, c in edited.items() if p not in originals or originals[p] != c}
 
 
-def _editing_message(edited: list, plan_summary: Optional[str], skipped: list) -> str:
+def _editing_message(edited: list, plan_summary: Optional[str], skipped: list, redacted: Optional[list] = None) -> str:
     """The reply shown for an editing run: what changed, the planner's one-line summary
-    (which also carries anything it couldn't do), and files it declined to touch."""
+    (which also carries anything it couldn't do), files it declined to touch, and secrets it replaced."""
     parts = [f"✅ Done! Edited {len(edited)} file(s): {', '.join(edited)}" if edited else "No files were changed."]
     if plan_summary:
         parts.append(plan_summary)
     if skipped:
         parts.append(f"Skipped (binary or too large to edit safely): {', '.join(skipped)}")
+    if redacted:
+        parts.append(describe_redactions(redacted))
     return "\n\n".join(parts)
 
 
@@ -161,9 +164,10 @@ class BackgroundTaskManager:
             # Step 5: Complete
             await reporter.step("complete", "...")
             await reporter.agent_update("project_generation_agent", "completed")
+            note = describe_redactions(result.get("redacted_secrets") or [])
             await reporter.complete({
                 "files": files,
-                "message": "Project generation completed successfully!"
+                "message": "Project generation completed successfully!" + (f"\n\n{note}" if note else "")
             })
 
             record_agent_run("generation", "success")
@@ -283,7 +287,8 @@ class BackgroundTaskManager:
             edited_file_names = list(edited_files.keys())
             task_plan = getattr(result.get("coder_state"), "task_plan", None)
             summary = _editing_message(
-                edited_file_names, getattr(task_plan, "edit_summary", None), result.get("skipped_files") or []
+                edited_file_names, getattr(task_plan, "edit_summary", None), result.get("skipped_files") or [],
+                result.get("redacted_secrets") or [],
             )
             await reporter.complete({
                 "edited_files": edited_files,

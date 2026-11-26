@@ -39,6 +39,7 @@ from backend.background_tasks import task_manager
 from backend.run_store import record_agent_run
 from backend.feedback_store import save_feedback
 from backend.online_eval import ON_THUMBS_DOWN, grade_run, grade_run_in_new_session, is_sampled
+from backend.guardrails import check_prompt, enforce_rate_limit
 from backend.edit_review import apply_review
 from agent.llm_client import LLM_PROVIDER, MODEL_NAME
 from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
@@ -1351,7 +1352,6 @@ async def _run_generation_task(
 
 
 @app.post("/generate")
-# @limiter.limit(RATE_LIMITS["generation"])  # TEMPORARILY DISABLED FOR TESTING
 async def start_generation(
     http_request: Request,
     request: GenerationRequest,
@@ -1363,6 +1363,10 @@ async def start_generation(
     Validates the request and resolves the repo/project path synchronously,
     then schedules the actual agent run as a background task and returns
     immediately - see `_run_generation_task` for why."""
+    # §3.1 guardrails: refuse oversized requests, and cap each user's agent runs per hour/day (backend/guardrails.py).
+    check_prompt(request.prompt)
+    await enforce_rate_limit(db, current_user["sub"])
+
     # Use provided session_id or generate a new one
     session_id = request.session_id if request.session_id else str(uuid.uuid4())
 

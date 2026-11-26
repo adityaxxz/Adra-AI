@@ -21,7 +21,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "message": str(exc.detail),
             "status_code": exc.status_code,
             "path": str(request.url.path)
-        }
+        },
+        headers=getattr(exc, "headers", None),   # e.g. Retry-After on a 429
     )
 
 

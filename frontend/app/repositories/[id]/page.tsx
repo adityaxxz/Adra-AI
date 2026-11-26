@@ -603,7 +603,11 @@ function RepositoryPageInner() {
         session_id: newSessionId,
       });
     } catch (e: any) {
-      addFailureMessage('Something went wrong. Please try again.');
+      // The API explains refusals the user can act on (rate limit, request too long); show those as they are.
+      // Error bodies are {error, message} (backend/error_handlers.py); only 4xx messages are meant for users.
+      const status = e?.response?.status;
+      const message = e?.response?.data?.message;
+      addFailureMessage(status >= 400 && status < 500 && typeof message === 'string' ? message : 'Something went wrong. Please try again.');
     }
   };
 

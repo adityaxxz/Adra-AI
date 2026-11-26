@@ -13,6 +13,7 @@ from agent.tools import read_file, write_file, init_project_root, read_sibling_f
 from agent.llm_client import structured_invoke, simple_invoke, truncate_for_context, get_stats
 from agent.observability import langfuse_observe
 from agent.progress import report_progress
+from agent.guardrails import redact_new_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ MAX_REPO_LISTING_CHARS = 30_000
 
 def _strip_markdown_fences(content: str) -> str:
     content = content.strip()
+    # §3.1: prompts wrap repository text in <repository_content> tags; a model that echoes them must not save them.
+    tag = re.match(r"^<repository_content>\n?(.*?)\n?</repository_content>$", content, re.DOTALL)
+    if tag:
+        content = tag.group(1).strip()
     match = re.match(r"^```[\w]*\n(.*)\n```$", content, re.DOTALL)
     if match:
         return match.group(1)
@@ -260,9 +265,13 @@ def coder_agent(state: dict) -> dict:
     content = _fix_double_escaping(_strip_markdown_fences(result.content), curr_task.filepath)
     content = _fix_escaped_quotes(content, curr_task.filepath, existing_content)
     content = _keep_trailing_newline(content, existing_content)
+    content, secrets = redact_new_secrets(content, existing_content)       # §3.1: no new credentials in written files
     write_file.invoke({"path": curr_task.filepath, "content": content})
 
     coder_state.current_step_idx += 1
+    if secrets:
+        return _carry(state, coder_state=coder_state,
+                      redacted_secrets=[*state.get("redacted_secrets", []), {"file": curr_task.filepath, "kinds": secrets}])
     return _carry(state, coder_state=coder_state)
 
 
@@ -300,6 +309,7 @@ def integrator_agent(state: dict) -> dict:
 
     allowed = {p.replace("\\", "/") for p in shown}
     applied = 0
+    redacted = []
     for update in result.updates:
         if update.filepath.replace("\\", "/") not in allowed:
             logger.warning(
@@ -310,9 +320,14 @@ def integrator_agent(state: dict) -> dict:
         content = _fix_double_escaping(_strip_markdown_fences(update.content), update.filepath)
         current = read_file.invoke({"path": update.filepath})
         content = _keep_trailing_newline(_fix_escaped_quotes(content, update.filepath, current), current)
+        content, secrets = redact_new_secrets(content, current)
+        if secrets:
+            redacted.append({"file": update.filepath, "kinds": secrets})
         write_file.invoke({"path": update.filepath, "content": content})
         applied += 1
 
+    if redacted:
+        return _carry(state, integration_fixes=applied, redacted_secrets=[*state.get("redacted_secrets", []), *redacted])
     return _carry(state, integration_fixes=applied)
 
 
