@@ -1,0 +1,26 @@
+{
+  "architect": {
+    "version": 1,
+    "sha": "435af1ca6c08f0fb"
+  },
+  "coder": {
+    "version": 1,
+    "sha": "ea905f7fce7ee1c6"
+  },
+  "edit_planner": {
+    "version": 1,
+    "sha": "02aa22994a674528"
+  },
+  "explainer": {
+    "version": 1,
+    "sha": "45f8354ca3c11228"
+  },
+  "integrator": {
+    "version": 1,
+    "sha": "303d7c87608ca818"
+  },
+  "planner": {
+    "version": 1,
+    "sha": "58e500b94e975c5e"
+  }
+}

@@ -21,7 +21,7 @@ def to_baseline(report: dict) -> dict:
     statuses = _statuses(report)
     return {
         "created": meta.get("started"), "git_sha": meta.get("git_sha"), "agent": meta.get("agent"),
-        "judge": meta.get("judge"), "exec": meta.get("exec"),
+        "prompt_versions": meta.get("prompt_versions"), "judge": meta.get("judge"), "exec": meta.get("exec"),
         "passed": sum(s == "passed" for s in statuses.values()), "total": len(statuses),
         "cases": dict(sorted(statuses.items())),
     }
@@ -81,4 +81,17 @@ def compare(report: dict, baseline: dict, max_drop: int = 2) -> tuple[str, list[
         lines.append(f"  now failing: {', '.join(newly_failing)}")
     if newly_passing:
         lines.append(f"  now passing: {', '.join(newly_passing)}")
+    lines += prompt_changes(report, baseline)
     return verdict, lines
+
+
+def prompt_changes(report: dict, baseline: dict) -> list[str]:
+    """Which prompt versions differ from the reference. Shown, never blocking: checking a prompt change against the last
+    good run is what the gate is for."""
+    now, ref = report["meta"].get("prompt_versions"), baseline.get("prompt_versions")
+    if not now:
+        return []
+    if not ref:
+        return ["  prompts: the reference was saved before prompt versions were recorded"]
+    changed = [f"{name} v{ref.get(name, '?')} -> v{now[name]}" for name in sorted(now) if ref.get(name) != now[name]]
+    return [f"  prompts changed since the reference: {', '.join(changed)}"] if changed else ["  prompts: same versions as the reference"]

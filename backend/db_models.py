@@ -151,6 +151,7 @@ class AgentRun(Base):
     user_prompt = Column(Text, nullable=False)
     provider = Column(String)
     model = Column(String)
+    prompt_versions = Column(JSON)  # e.g. {"explainer": 1}; agent.prompts.PROMPT_VERSIONS for this mode. NULL = before versioning
 
     status = Column(String, nullable=False, index=True)  # "success" | "failure"
     error_message = Column(Text)

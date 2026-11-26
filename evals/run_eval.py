@@ -80,6 +80,7 @@ def main(argv=None) -> int:
 
     test_keys = use_test_keys()                            # evals run on the *_TEST keys when set, so they never drain the app's quota
 
+    from agent.prompts import PROMPT_VERSIONS
     from evals.dataset import load_cases
     from evals.evaluators.judge import JUDGE_MODEL, Judge
     from evals.pipeline import LivePipeline
@@ -103,6 +104,7 @@ def main(argv=None) -> int:
         return {
             "meta": {"run_id": runner.run_id, "label": args.label, "started": started.isoformat(), "complete": complete,
                      "wall_seconds": round(time.monotonic() - t0, 1), "git_sha": git_sha(), "agent": pipeline.describe(),
+                     "prompt_versions": dict(PROMPT_VERSIONS),
                      "judge": None if judge is None else judge_model,
                      "judge_usage": None if judge is None else {"calls": judge.calls, "input_tokens": judge.input_tokens,
                                                                  "output_tokens": judge.output_tokens, "rate_limit_hits": judge.rate_limit_hits,

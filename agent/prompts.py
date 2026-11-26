@@ -1,4 +1,29 @@
 
+# Phase 4 "Version prompts": bump a prompt's number whenever you change what it sends to the model (its text, or a shared
+# piece it uses such as UNTRUSTED_NOTICE). Every saved run and eval report records these, so a score can be traced to
+# the prompt versions that produced it. tests/test_prompt_versions.py fails if a prompt changes without a bump.
+PROMPT_VERSIONS = {
+    "planner": 1,
+    "edit_planner": 1,
+    "architect": 1,
+    "coder": 1,
+    "integrator": 1,
+    "explainer": 1,
+}
+
+# Which prompts each mode's pipeline uses (keys are SessionMode values).
+MODE_PROMPTS = {
+    "generation": ("planner", "architect", "coder", "integrator"),
+    "editing": ("edit_planner", "coder", "integrator"),
+    "question_answering": ("explainer",),
+}
+
+
+def prompt_versions_for(mode: str) -> dict:
+    """The versions of the prompts a run in this mode used, e.g. {"explainer": 1}."""
+    return {name: PROMPT_VERSIONS[name] for name in MODE_PROMPTS.get(mode, ())}
+
+
 # §3.1 "Guardrails (input & output)": repository files are untrusted input (users upload arbitrary repos). Their text is
 # wrapped in tags and the model is told to treat it as data, so instructions planted in a file are not followed. Used only
 # where repository text is present: editing and Q&A prompts, never for a new project (no extra tokens there).

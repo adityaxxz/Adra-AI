@@ -64,6 +64,28 @@ def test_a_run_that_does_not_measure_the_same_thing_is_inconclusive_not_green(kw
     assert verdict == B.INCONCLUSIVE and reason in "\n".join(lines)
 
 
+def _with_prompts(rep, versions):
+    rep["meta"]["prompt_versions"] = versions
+    return rep
+
+
+def test_a_prompt_change_is_shown_but_still_compared():
+    """Phase 4 "Version prompts": checking a prompt change against the last good run is what the gate is for."""
+    ref = B.to_baseline(_with_prompts(report(11), {"coder": 1, "explainer": 1}))
+    assert ref["prompt_versions"] == {"coder": 1, "explainer": 1}
+    verdict, lines = B.compare(_with_prompts(report(11), {"coder": 2, "explainer": 1}), ref, max_drop=2)
+    assert verdict == B.PASS and "prompts changed since the reference: coder v1 -> v2" in "\n".join(lines)
+    verdict, lines = B.compare(_with_prompts(report(8), {"coder": 2, "explainer": 1}), ref, max_drop=2)
+    assert verdict == B.REGRESSION and "coder v1 -> v2" in "\n".join(lines)
+    _, lines = B.compare(_with_prompts(report(11), {"coder": 1, "explainer": 1}), ref, max_drop=2)
+    assert "same versions as the reference" in "\n".join(lines)
+
+
+def test_a_reference_saved_before_prompt_versions_still_compares():
+    verdict, lines = B.compare(_with_prompts(report(11), {"coder": 1}), REF, max_drop=2)
+    assert verdict == B.PASS and "saved before prompt versions were recorded" in "\n".join(lines)
+
+
 def test_exit_codes_distinguish_regression_from_cant_compare():
     assert (B.EXIT_CODES[B.PASS], B.EXIT_CODES[B.REGRESSION], B.EXIT_CODES[B.INCONCLUSIVE]) == (0, 1, 2)
 

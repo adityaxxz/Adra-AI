@@ -3,6 +3,7 @@ import logging
 import uuid
 from typing import Optional
 
+from agent.prompts import prompt_versions_for
 from backend.db_models import AgentRun, RunStep
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ def build_agent_run(*, session_id: str, mode: str, prompt: str, task_result: dic
         user_prompt=prompt,
         provider=provider,
         model=model,
+        prompt_versions=prompt_versions_for(mode),
         status="success" if success else "failure",
         error_message=None if success else str(task_result.get("error") or "unknown error"),
         llm_calls=metrics.get("llm_calls", 0),

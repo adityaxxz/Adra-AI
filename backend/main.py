@@ -144,6 +144,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE repositories ADD COLUMN IF NOT EXISTS files JSON;"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS repository_id VARCHAR;"))
+        await conn.execute(text("ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS prompt_versions JSON;"))
     await fail_orphaned_runs()
     yield
     # Shutdown

@@ -102,6 +102,10 @@ then commit `evals/baselines/reference.json`. A run that stopped early or left c
 The same comparison works locally: add `--baseline evals/baselines/reference.json` to any full run (exit 1 = regression,
 2 = can't compare).
 
+Each report and reference also records the prompt versions (`PROMPT_VERSIONS` in `agent/prompts.py`). When they differ
+from the reference, the comparison lists them (e.g. `prompts changed since the reference: coder v1 -> v2`) and still
+gives its verdict: checking a prompt change against the last good run is what the gate is for.
+
 ## Caveats
 
 - Agents run at temperature 0 but are still non-deterministic; use `--repeat` before trusting a small difference.

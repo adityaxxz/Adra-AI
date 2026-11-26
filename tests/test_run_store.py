@@ -49,6 +49,13 @@ def test_a_run_that_died_before_any_llm_call_has_zeroes_not_errors():
     assert (run.llm_calls, run.input_tokens, run.cost_usd) == (0, 0, 0.0)
 
 
+def test_a_run_records_the_versions_of_the_prompts_its_mode_used():
+    from agent.prompts import PROMPT_VERSIONS as V
+    assert _build({"success": True}, "question_answering").prompt_versions == {"explainer": V["explainer"]}
+    assert _build({"success": True}, "editing").prompt_versions == {k: V[k] for k in ("edit_planner", "coder", "integrator")}
+    assert set(_build({"success": True}, "generation").prompt_versions) == {"planner", "architect", "coder", "integrator"}
+
+
 def test_qa_runs_have_no_integration_fixes():
     assert _build({"success": True, "metrics": METRICS}, "question_answering").integration_fixes == 0
 
@@ -103,6 +110,7 @@ async def test_record_agent_run_saves_the_run_and_its_steps(db_session_maker):
     assert run.input_tokens == 1200 and run.cost_usd == pytest.approx(0.00123) and run.integration_fixes == 1
     assert run.created_at is not None
     assert sorted(s.agent for s in steps) == ["coder", "edit_planner", "integrator"]
+    assert set(run.prompt_versions) == {"edit_planner", "coder", "integrator"}, "versions survive the database round trip"
 
 
 @pytestmark_db
