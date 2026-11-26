@@ -422,6 +422,8 @@ pipelines and score them with deterministic checks (syntax, cross-file imports, 
 checks), optional executable checks, retrieval metrics and an LLM judge. See
 [`evals/README.md`](evals/README.md). It makes real LLM calls, so it is not part of `pytest`.
 
+A manual GitHub Actions workflow (**Evals (quality gate)**) runs the same evals and fails if clearly fewer cases pass than a saved reference run. In production, an LLM judge grades a sample of real runs plus every thumbs-down reply; admins see the results at `/admin/evals`.
+
 ## Project Structure
 
 ```
