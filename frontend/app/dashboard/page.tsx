@@ -113,10 +113,12 @@ export default function Dashboard() {
         local_path: repoUploadMode === 'folder' ? newRepo.local_path : undefined,
         provider: repoUploadMode === 'folder' ? 'local' : newRepo.provider,
       };
-      await repositoriesAPI.createRepository(repoData);
+      const created = await repositoriesAPI.createRepository(repoData);
       setShowNewRepo(false);
       setNewRepo({ name: '', url: '', local_path: '', provider: 'github' });
-      loadData();
+      // Open the repository so the user watches it index (the repo page starts indexing by itself),
+      // like the folder upload below.
+      router.push(`/repositories/${created.id}`);
     } catch (e) {
       console.error(e);
     } finally {
