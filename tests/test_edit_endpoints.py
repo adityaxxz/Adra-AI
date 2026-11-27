@@ -109,6 +109,31 @@ async def test_resolve_leaves_a_file_alone_if_it_changed_since_the_run(client, d
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "a later run's work"
 
 
+@pytest.fixture
+def index_calls(monkeypatch):
+    calls = []
+    monkeypatch.setattr(M, "index_repository", lambda path, collection: calls.append((str(path), collection)))
+    return calls
+
+
+async def test_a_reject_refreshes_the_search_index_so_answers_follow_the_disk(client, db_session_maker, tmp_path, index_calls):
+    """Live bug: after an edit, Ask mode kept answering from the pre-edit code (the index was never refreshed)."""
+    (tmp_path / "a.py").write_text("new a", encoding="utf-8")
+    (tmp_path / "new.txt").write_text("created", encoding="utf-8")
+    async with db_session_maker() as db:
+        await _seed(db, tmp_path, {"a.py": "new a", "new.txt": "created"}, session_result=_run_result())
+    await client.post("/repositories/r1/edits/s1/resolve", json={"reject": ["a.py"]})
+    assert index_calls == [(str(tmp_path), "repo_r1")]
+
+
+async def test_a_plain_accept_changes_nothing_on_disk_so_no_reindex(client, db_session_maker, tmp_path, index_calls):
+    (tmp_path / "a.py").write_text("new a", encoding="utf-8")
+    async with db_session_maker() as db:
+        await _seed(db, tmp_path, {"a.py": "new a"}, session_result=_run_result())
+    await client.post("/repositories/r1/edits/s1/resolve", json={"accept": ["a.py"]})
+    assert index_calls == []
+
+
 async def test_resolve_404s_for_someone_elses_session(client, db_session_maker, tmp_path):
     async with db_session_maker() as db:
         await _seed(db, tmp_path, {}, session_result=_run_result(), session_owner="u2")

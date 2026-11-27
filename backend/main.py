@@ -42,6 +42,7 @@ from backend.online_eval import ON_THUMBS_DOWN, grade_run, grade_run_in_new_sess
 from backend.guardrails import check_prompt, enforce_rate_limit
 from backend.edit_review import apply_review
 from agent.llm_client import LLM_PROVIDER, MODEL_NAME
+from agent.repository.service import index_repository
 from backend.rate_limit import limiter, RATE_LIMITS, rate_limit_handler
 from backend.error_handlers import (
     http_exception_handler,
@@ -1249,6 +1250,19 @@ async def upload_folder(
 # Generation Endpoints
 # =========================
 
+async def refresh_repository_index(repo_path: Optional[str], collection_name: Optional[str]) -> None:
+    """Bring a repository's search index in line with its files on disk, after an edit run wrote them or a review
+    restored or hand-edited them. Without this, Q&A and the edit planner kept retrieving the code as it was before the
+    edit (seen live: Ask mode still reported the old button colour after the change was accepted). Incremental: only
+    changed files are re-embedded. Never raises - a failed refresh must not break the run or the review."""
+    if not repo_path or not collection_name:
+        return
+    try:
+        await asyncio.to_thread(index_repository, repo_path, collection_name)
+    except Exception as e:
+        logger.warning(f"Search index refresh failed for {collection_name!r}: {e}")
+
+
 async def _run_generation_task(
     mode: SessionMode,
     session_id: str,
@@ -1313,6 +1327,9 @@ async def _run_generation_task(
                     if repository:
                         repository.files = {**(repository.files or {}), **task_result["edited_files"]}
                         await db.commit()
+                # The run wrote to disk (the user already has the result): re-index so later questions see the new code.
+                if task_result.get("success") and task_result.get("edited_files"):
+                    await refresh_repository_index(repo_path, collection_name)
 
             else:  # QUESTION_ANSWERING
                 task_result = await task_manager.execute_question_answering(
@@ -1664,6 +1681,7 @@ async def resolve_edits(
     repository_id: str,
     session_id: str,
     request: EditReviewRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1705,6 +1723,8 @@ async def resolve_edits(
             files[path] = content
     repository.files = files
     await db.commit()
+    if outcome["files"]:   # a reject restored a file or an accept wrote a hand edit: the index must follow the disk
+        background_tasks.add_task(refresh_repository_index, repo_path, repository.collection_name)
     return {"review": outcome["review"], "conflicts": outcome["conflicts"]}
 
 

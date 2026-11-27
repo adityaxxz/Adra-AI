@@ -167,6 +167,50 @@ async def test_background_task_records_the_run_and_still_finalises_the_session(d
     assert session.is_active is False and session.result["answer"] == "42"
 
 
+async def _edit_run(db_session_maker, monkeypatch, sid, task_result, index):
+    monkeypatch.setattr(M, "async_session", db_session_maker)
+    monkeypatch.setattr(M, "index_repository", index)
+    async with db_session_maker() as db:
+        await _seed_session(db, sid)
+
+    async def fake_edit(**kwargs):
+        return {"metrics": METRICS, "task_id": "t", **task_result}
+
+    monkeypatch.setattr(M.task_manager, "execute_repository_editing", fake_edit)
+    await M._run_generation_task(
+        mode=SessionMode.EDITING, session_id=sid, prompt="change it", project_root="./x",
+        project_id=None, repository_id=None, repo_path="/repo", collection_name="repo_c", recursion_limit=5,
+    )
+    async with db_session_maker() as db:
+        return (await db.execute(select(Session).where(Session.id == sid))).scalar_one()
+
+
+@pytestmark_db
+async def test_an_edit_run_refreshes_the_search_index_after_writing(db_session_maker, monkeypatch):
+    """Live bug: Ask mode answered from the pre-edit code because nothing re-indexed after an edit."""
+    calls = []
+    await _edit_run(db_session_maker, monkeypatch, "s-e1", {"success": True, "edited_files": {"style.css": "x"}},
+                    lambda path, coll: calls.append((path, coll)))
+    assert calls == [("/repo", "repo_c")]
+
+
+@pytestmark_db
+async def test_a_failed_or_empty_edit_run_does_not_reindex(db_session_maker, monkeypatch):
+    calls = []
+    await _edit_run(db_session_maker, monkeypatch, "s-e2", {"success": False, "error": "boom"}, lambda *a: calls.append(a))
+    await _edit_run(db_session_maker, monkeypatch, "s-e3", {"success": True, "edited_files": {}}, lambda *a: calls.append(a))
+    assert calls == []
+
+
+@pytestmark_db
+async def test_a_failed_index_refresh_cannot_break_the_edit_run(db_session_maker, monkeypatch):
+    def explode(*a):
+        raise RuntimeError("qdrant down")
+
+    session = await _edit_run(db_session_maker, monkeypatch, "s-e4", {"success": True, "edited_files": {"a": "b"}}, explode)
+    assert session.is_active is False and session.result["success"] is True
+
+
 @pytestmark_db
 async def test_a_recording_failure_cannot_break_the_user_facing_run(db_session_maker, monkeypatch):
     monkeypatch.setattr(M, "async_session", db_session_maker)
