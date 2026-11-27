@@ -86,6 +86,7 @@ export default function ProjectPage() {
     if (latestMessage && (latestMessage.type === 'complete' || latestMessage.step === 'complete')) {
       console.log('Generation completed, refreshing project data...');
       loadProject();
+      loadSidebarData();   // the sidebar's status badge would otherwise stay "pending"
       setIsGenerating(false);
     }
   }, [latestMessage]);
@@ -102,6 +103,11 @@ export default function ProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
+  // The run's status lines, in order (same `progress` frames the repository chat shows as its status line).
+  const progressSteps: string[] = messages
+    .filter((m: any) => m?.type === 'progress' && m?.step === 'progress' && m?.message)
+    .map((m: any) => String(m.message));
+
   // Safety net for a missed WebSocket "complete" (dropped connection, or a reload just as the run ends): while the
   // project is running, re-read its status every 5 s and leave the running state as soon as it changes.
   useEffect(() => {
@@ -112,6 +118,7 @@ export default function ProjectPage() {
         if (data.status !== 'in_progress') {
           setProject(data);
           setIsGenerating(false);
+          loadSidebarData();
         }
       } catch {}
     }, 5000);
@@ -401,18 +408,23 @@ export default function ProjectPage() {
                 <div className="w-4 h-4 rounded-full border-2 border-t-indigo-400 border-indigo-400/20 animate-spin" />
                 Generating your project…
               </h2>
-              <div className="space-y-2">
-                {messages.length > 0 && (
-                  <div className="rounded-lg p-4 text-xs" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-                    <p style={{ color: 'var(--text-secondary)' }}>
-                      {latestMessage?.message || latestMessage?.step || 'Processing…'}
-                    </p>
-                  </div>
-                )}
-                {messages.length === 0 && (
-                  <div className="rounded-lg p-4 text-xs" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-                    <p style={{ color: 'var(--text-secondary)' }}>Initializing…</p>
-                  </div>
+              <div className="rounded-lg p-4 text-xs space-y-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                {progressSteps.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)' }}>Starting…</p>
+                ) : (
+                  progressSteps.map((text, i) => {
+                    const current = i === progressSteps.length - 1;
+                    return (
+                      <div key={i} className="flex items-center gap-2" style={{ color: current ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                        {current ? (
+                          <div className="w-3 h-3 rounded-full border-2 border-t-indigo-400 border-indigo-400/20 animate-spin shrink-0" />
+                        ) : (
+                          <span className="w-3 text-center shrink-0" style={{ color: 'var(--success)' }}>✓</span>
+                        )}
+                        <span>{text}</span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>

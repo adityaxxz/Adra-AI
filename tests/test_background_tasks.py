@@ -169,3 +169,24 @@ async def test_an_edit_reports_its_steps_to_the_chat_while_it_runs(tmp_path, mon
     steps = [f["message"] for f in frames.of("progress") if f.get("step") == "progress"]
     assert steps == ["Planning the changes", "Writing a.py (1 of 1)", "Applying final touches"]
     assert frames.sent.index(frames.of("complete")[0]) > frames.sent.index(frames.of("progress")[-1])
+
+
+async def test_a_generation_reports_its_steps_to_the_page_while_it_runs(tmp_path, monkeypatch):
+    """Generation used to show only "Initializing..." for the whole run: its worker never set a progress callback."""
+    from agent.progress import report_progress
+    frames = _Frames(monkeypatch)
+
+    class FakeGraph:
+        def invoke(self, state, config):
+            report_progress("Planning the project")
+            report_progress("Writing app.py (1 of 1)")
+            return {}
+
+    monkeypatch.setattr(BT, "project_generation_agent", FakeGraph())
+    out = await BT.BackgroundTaskManager(max_workers=1).execute_project_generation("gen-s", "make it", str(tmp_path / "p"))
+
+    assert out["success"] is True
+    steps = [f["message"] for f in frames.of("progress") if f.get("step") == "progress"]
+    assert steps == ["Planning the project", "Writing app.py (1 of 1)", "Applying final touches"]
+    assert frames.sent.index(frames.of("complete")[0]) > frames.sent.index(frames.of("progress")[-1])
+    assert not any(f.get("message") == "..." for f in frames.sent), "no placeholder text reaches the page"

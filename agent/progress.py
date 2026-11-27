@@ -2,7 +2,7 @@
 
 The worker thread that runs a graph sets a callback for its own run; nodes call `report_progress`.
 A ContextVar, like the project root in `agent.tools`, so concurrent runs never report into each
-other's chat. Without a callback (CLI, evals, generation) reporting does nothing.
+other's chat. Without a callback (CLI, evals) reporting does nothing.
 """
 import logging
 from contextvars import ContextVar

@@ -198,6 +198,25 @@ def test_generation_pipeline_still_runs_planner_architect_coder_integrator(proje
     assert G._plan_summary(result["coder_state"].task_plan).startswith("Hello")
 
 
+def test_generation_reports_each_step_as_it_happens(project, monkeypatch):
+    from agent.progress import set_progress_reporter
+    def respond(schema):
+        return {Plan: Plan(name="Hello", description="d", techstack="python", features=["f"],
+                           files=[File(path="hello.py", purpose="p")]),
+                TaskPlan: TaskPlan(steps=[Architect(filepath="hello.py", task_description="print hi")]),
+                CoderOutput: CoderOutput(content="print('hi')"),
+                IntegrationResult: IntegrationResult(updates=[])}[schema]
+    monkeypatch.setattr(G, "structured_invoke", RecordingLLM(respond))
+    seen = []
+    set_progress_reporter(seen.append)
+    try:
+        G.project_generation_agent.invoke({"user_prompt": "make hello", "session_id": "g"}, {"recursion_limit": 30})
+    finally:
+        set_progress_reporter(None)
+    assert seen == ["Planning the project", "Designing the files for Hello", "Writing hello.py (1 of 1)",
+                    "Checking everything fits together"]
+
+
 def test_planner_prompt_has_no_repository_instructions():
     # generation has no repo; the old prompt told the model to "use the repository context" anyway
     from agent.prompts import planner_prompt

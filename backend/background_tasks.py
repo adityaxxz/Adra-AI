@@ -130,10 +130,11 @@ class BackgroundTaskManager:
             reporter.set_total_steps(5)
             
             # Step 1: Initialize
-            await reporter.step("initialization", "...")
-            
-            # Step 2: Run agent
-            await reporter.step("agent_execution", "...")
+            await reporter.step("initialization", "Getting started")
+
+            # Step 2: Run agent. Its nodes report what they're doing ("Planning the project", "Writing app.py (1 of 3)")
+            # through the progress callback, the same status line the editing pipeline uses.
+            await reporter.step("agent_execution", "Running the agents")
             await reporter.agent_update("project_generation_agent", "started")
             
             # Run the agent in a thread pool since it's synchronous
@@ -145,24 +146,26 @@ class BackgroundTaskManager:
                 recursion_limit,
                 reporter,
                 session_id,
-                project_root
+                project_root,
+                _progress_sender(session_id, loop),
             )
             metrics = result.pop("_metrics", None)
             if metrics:
                 logger.info("agent_run_metrics", extra={"session_id": session_id, **metrics})
 
             # Step 3: Integration fixes
-            await reporter.step("integration", "...")
+            await manager.broadcast_progress(session_id, step="progress", message="Applying final touches")
+            await reporter.step("integration", "Integration check done")
             fixes = result.get("integration_fixes", 0)
             if fixes:
                 await reporter.update("integration", f"Applied {fixes} integration fix(es)")
 
             # Step 4: Collect files
-            await reporter.step("collecting_files", "...")
+            await reporter.step("collecting_files", "Collecting the files")
             files = self._collect_project_files(project_root)
 
             # Step 5: Complete
-            await reporter.step("complete", "...")
+            await reporter.step("complete", "Done")
             await reporter.agent_update("project_generation_agent", "completed")
             note = describe_redactions(result.get("redacted_secrets") or [])
             await reporter.complete({
@@ -197,7 +200,8 @@ class BackgroundTaskManager:
         recursion_limit: int,
         reporter: ProgressReporter,
         session_id: Optional[str] = None,
-        project_root: Optional[str] = None
+        project_root: Optional[str] = None,
+        on_progress: Optional[Callable[[str], None]] = None,
     ) -> Dict:
         """Synchronous wrapper for project generation agent. Runs in a worker
         thread, so the run-correlation context and LLM run metrics are bound
@@ -209,6 +213,7 @@ class BackgroundTaskManager:
         if project_root:
             set_project_root(project_root)
             init_project_root()
+        set_progress_reporter(on_progress)
         try:
             agent = project_generation_agent
             initial_state = {"user_prompt": user_prompt, "session_id": session_id}
@@ -226,6 +231,7 @@ class BackgroundTaskManager:
             raise
         finally:
             set_project_root(None)  # pool threads are reused; don't leak this run's root into the next
+            set_progress_reporter(None)
             clear_run_context()
     
     async def execute_repository_editing(

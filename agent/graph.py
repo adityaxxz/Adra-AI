@@ -141,6 +141,7 @@ def planner_agent(state: dict) -> dict:
     `edit_planner_agent` instead."""
     user_prompt = state["user_prompt"]
     session_id = state.get("session_id")
+    report_progress("Planning the project")
 
     res = structured_invoke(
         Plan,
@@ -156,6 +157,7 @@ def planner_agent(state: dict) -> dict:
 @langfuse_observe("architect_agent", as_type="agent")
 def architect_agent(state: dict) -> dict:
     plan: Plan = state["plan"]
+    report_progress(f"Designing the files for {plan.name}")
     res = structured_invoke(TaskPlan, architect_prompt(plan), agent="architect", session_id=state.get("session_id"))
     res.plan = plan
     return _carry(state, task_plan=res)
