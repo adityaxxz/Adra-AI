@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { projectsAPI, generationAPI, repositoriesAPI } from '../../../api-client';
@@ -89,6 +89,18 @@ export default function ProjectPage() {
       setIsGenerating(false);
     }
   }, [latestMessage]);
+
+  // Arriving from "Create Project" (?start=1): start generating once. The flag is dropped from the URL first, so a
+  // reload never starts a second run; a project that isn't pending (already started) is left alone.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!project || autoStarted.current) return;
+    if (new URLSearchParams(window.location.search).get('start') !== '1') return;
+    autoStarted.current = true;
+    router.replace(`/projects/${projectId}`);
+    if (project.status === 'pending') handleStartGeneration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project]);
 
   // Safety net for a missed WebSocket "complete" (dropped connection, or a reload just as the run ends): while the
   // project is running, re-read its status every 5 s and leave the running state as soon as it changes.

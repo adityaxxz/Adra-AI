@@ -91,10 +91,11 @@ export default function Dashboard() {
     e.preventDefault();
     setCreatingProject(true);
     try {
-      await projectsAPI.createProject(newProject);
+      const created = await projectsAPI.createProject(newProject);
       setShowNewProject(false);
       setNewProject({ name: '', description: '', prompt: '' });
-      loadData();
+      // Open the project and start generating straight away (the project page reads ?start=1 once).
+      router.push(`/projects/${created.id}?start=1`);
     } catch (e) {
       console.error(e);
     } finally {
