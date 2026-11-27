@@ -55,7 +55,7 @@ export default function ProjectPage() {
   const [sidebarRepos, setSidebarRepos] = useState<any[]>([]);
 
   // WebSocket connection for real-time progress
-  const { isConnected, messages, latestMessage, error, clearError } = useWebSocket(
+  const { isConnected, latestMessage, error, clearError } = useWebSocket(
     sessionId || '',
     user?.id || 'anonymous'
   );
@@ -103,10 +103,16 @@ export default function ProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
-  // The run's status lines, in order (same `progress` frames the repository chat shows as its status line).
-  const progressSteps: string[] = messages
-    .filter((m: any) => m?.type === 'progress' && m?.step === 'progress' && m?.message)
-    .map((m: any) => String(m.message));
+  // The run's status lines, in order. useWebSocket keeps only the latest frame (the repository chat relies on that),
+  // so collect the agents' `progress` lines here; other frames (step counters, agent updates) don't clear the list.
+  const [progressSteps, setProgressSteps] = useState<string[]>([]);
+  useEffect(() => {
+    const m = latestMessage;
+    if (m?.type === 'progress' && m.step === 'progress' && m.message) {
+      const text = String(m.message);
+      setProgressSteps(prev => (prev[prev.length - 1] === text ? prev : [...prev, text]));
+    }
+  }, [latestMessage]);
 
   // Safety net for a missed WebSocket "complete" (dropped connection, or a reload just as the run ends): while the
   // project is running, re-read its status every 5 s and leave the running state as soon as it changes.
@@ -158,6 +164,7 @@ export default function ProjectPage() {
 
     try {
       setIsGenerating(true);
+      setProgressSteps([]);   // a new run starts a new list
       setProject(prev => prev ? { ...prev, error_message: null } : prev);
 
       // Pre-generate session ID to allow WebSocket connection before generation begins
@@ -405,7 +412,6 @@ export default function ProjectPage() {
               style={{ background: 'var(--accent-light)', borderColor: 'var(--accent-light)' }}
             >
               <h2 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--accent)' }}>
-                <div className="w-4 h-4 rounded-full border-2 border-t-indigo-400 border-indigo-400/20 animate-spin" />
                 Generating your project…
               </h2>
               <div className="rounded-lg p-4 text-xs space-y-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
