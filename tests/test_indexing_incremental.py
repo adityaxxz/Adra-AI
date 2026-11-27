@@ -30,6 +30,11 @@ class FakeStore:
                             lambda fp, *a, **k: {cid: p["chunk_hash"] for cid, p in self.points.items() if p["file_path"] == fp})
         monkeypatch.setattr(S, "delete_chunk_by_id", lambda cid, *a, **k: self.points.pop(cid, None))
         monkeypatch.setattr(S, "delete_file_chunks", self.delete_file_chunks)
+        monkeypatch.setattr(S, "set_file_hash", self.set_file_hash)
+
+    def set_file_hash(self, chunk_ids, file_hash, collection_name=None):
+        for cid in chunk_ids:
+            self.points[cid]["file_hash"] = file_hash
 
     def index_chunks(self, chunks, collection_name=None):
         for c in chunks:
@@ -153,6 +158,40 @@ def test_chunks_from_before_chunk_hashing_are_re_embedded_once_then_stable(make_
 
     again = S.index_repository(str(root), "c")
     assert again.chunks_created == 0 and again.files_skipped == 1
+
+
+def test_after_a_partial_update_every_chunk_carries_the_new_file_hash(make_repo, store):
+    """Kept chunks used to keep the old file_hash. With mixed hashes, which one the index reported for the file was
+    arbitrary, so reverting the file (a rejected edit) could be skipped while the edited chunk stayed stale."""
+    root = make_repo({"calc.py": V1})
+    S.index_repository(str(root), "c", reset=True)
+    _write(root, "calc.py", V1.replace("return a * b", "return a * b  # scaled"))
+    S.index_repository(str(root), "c")
+    current = scan_repository(str(root))[0].file_hash
+    assert {p["file_hash"] for p in store.points.values()} == {current}
+
+
+def test_reverting_an_edit_restores_the_original_chunks(make_repo, store):
+    """The reject path: edit, refresh, restore the original, refresh -> the index holds the original code again."""
+    root = make_repo({"calc.py": V1})
+    S.index_repository(str(root), "c", reset=True)
+    original = {cid: p["content"] for cid, p in store.points.items()}
+    _write(root, "calc.py", V1.replace("return a * b", "return a * b  # scaled"))
+    S.index_repository(str(root), "c")
+    _write(root, "calc.py", V1)
+    S.index_repository(str(root), "c")
+    assert {cid: p["content"] for cid, p in store.points.items()} == original
+
+
+def test_a_file_whose_chunks_disagree_on_its_hash_is_reported_as_changed(monkeypatch):
+    """Collections written before the fix can hold mixed hashes; report "" so the file is always diffed."""
+    from types import SimpleNamespace as NS
+    from agent.repository import vector_store as V
+
+    pts = [NS(payload={"file_path": "a.css", "file_hash": "old"}), NS(payload={"file_path": "a.css", "file_hash": "new"}),
+           NS(payload={"file_path": "b.css", "file_hash": "same"}), NS(payload={"file_path": "b.css", "file_hash": "same"})]
+    monkeypatch.setattr(V, "client", NS(scroll=lambda **k: (pts, None)))
+    assert V.get_file_hashes("c") == {"a.css": "", "b.css": "same"}
 
 
 def test_empty_repository_clears_the_index(make_repo, store):

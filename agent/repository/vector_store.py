@@ -115,6 +115,19 @@ def delete_chunk_by_id(chunk_id: str, collection_name: str = None) -> None:
         logger.warning(f"delete_chunk_by_id failed for {chunk_id!r} in {name!r}: {e}")
 
 
+def set_file_hash(chunk_ids: list[str], file_hash: str, collection_name: str = None) -> None:
+    """Stamp the current file hash on chunks that were kept (content unchanged, no re-embedding), so every chunk of a
+    file carries the same file_hash after a partial update."""
+    name = collection_name or _active_collection_name
+    if not chunk_ids:
+        return
+    try:
+        client.set_payload(collection_name=name, payload={"file_hash": file_hash},
+                           points=[_point_id(c) for c in chunk_ids])
+    except Exception as e:
+        logger.warning(f"set_file_hash failed for {len(chunk_ids)} chunk(s) in {name!r}: {e}")
+
+
 def clear_collection(collection_name: str = None) -> None:
     """Clear a specific collection. Uses active collection if not specified."""
     name = collection_name or _active_collection_name
@@ -131,14 +144,16 @@ def get_file_hashes(collection_name: str = None) -> dict[str, str]:
     try:
         result = client.scroll(collection_name=name, limit=10000, with_payload=True)
 
-        file_hashes = {}
+        seen: dict[str, set] = {}
         for point in result[0]:
             file_path = point.payload.get("file_path")
             file_hash = point.payload.get("file_hash")
             if file_path and file_hash:
-                file_hashes[file_path] = file_hash
+                seen.setdefault(file_path, set()).add(file_hash)
 
-        return file_hashes
+        # A file whose chunks disagree (left by an older partial update) reports "" so it is always diffed: picking
+        # one chunk's hash at random could match the file on disk while another chunk still holds stale content.
+        return {path: next(iter(hashes)) if len(hashes) == 1 else "" for path, hashes in seen.items()}
     except Exception as e:
         logger.warning(f"get_file_hashes failed for collection {name!r}, treating as empty: {e}")
         return {}

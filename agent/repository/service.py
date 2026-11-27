@@ -6,7 +6,7 @@ import re
 from agent.repository.scanner import scan_repository
 from agent.repository.chunker import chunk_repository
 from agent.repository.retriever import retrieve
-from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection, get_chunk_hashes_for_file, delete_chunk_by_id
+from agent.repository.vector_store import index_chunks, clear_collection, set_active_collection, get_file_hashes, delete_file_chunks, get_files_in_collection, get_chunk_hashes_for_file, delete_chunk_by_id, set_file_hash
 from agent.repository.models import IndexingStats, DEFAULT_RETRIEVAL_K
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,7 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
                 delete_chunk_by_id(removed_id, collection_name)
 
             # Chunks that are new or whose content changed → re-embed
+            kept: list = []
             for chunk_id, chunk in new_chunk_map.items():
                 stored_hash = stored_chunk_hashes.get(chunk_id, "")
                 if chunk.chunk_hash != stored_hash:
@@ -115,7 +116,11 @@ def index_repository(repo_path: str, collection_name: str = "repo_chunks", reset
                 else:
                     # Chunk content unchanged — skip (Level 2 optimisation)
                     stats.chunks_skipped += 1
+                    kept.append(chunk_id)
 
+            # Kept chunks still carry the old file_hash; stamp the new one (payload only, no embedding), or the file's
+            # chunks disagree and a later revert to the old content would be skipped while a re-embedded chunk is stale.
+            set_file_hash(kept, file.file_hash, collection_name)
             stats.files_indexed += 1
 
         # ── Full index for brand-new files ────────────────────────────────────
