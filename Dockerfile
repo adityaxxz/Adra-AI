@@ -12,6 +12,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Bake the GPT-2 tokenizer (used to budget prompt truncation) into the image, so the server never downloads it from
+# Hugging Face at runtime (that happened on the first request after every restart). See agent/llm_client.py.
+RUN python -c "from tokenizers import Tokenizer; Tokenizer.from_pretrained('gpt2').save('/app/gpt2-tokenizer.json')"
+ENV TOKENIZER_FILE=/app/gpt2-tokenizer.json
+
 # Copy agent code
 COPY agent/ ./agent/
 

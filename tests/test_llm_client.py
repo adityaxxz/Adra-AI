@@ -245,6 +245,24 @@ def test_token_budget_truncation_uses_the_tokenizer(monkeypatch):
     assert out == "abcdefghab" + L._TRUNCATION_SUFFIX
 
 
+def test_tokenizer_loads_from_the_baked_in_file_without_downloading(monkeypatch, tmp_path):
+    """The image ships the tokenizer (TOKENIZER_FILE); fetching it from Hugging Face on the first request after every
+    restart cost time and a network dependency."""
+    from tokenizers import Tokenizer, models
+
+    path = tmp_path / "tok.json"
+    Tokenizer(models.WordLevel({"[UNK]": 0, "hi": 1}, unk_token="[UNK]")).save(str(path))
+
+    def no_download(*a, **k):
+        raise AssertionError("must not download when TOKENIZER_FILE exists")
+
+    monkeypatch.setattr(Tokenizer, "from_pretrained", staticmethod(no_download))
+    monkeypatch.setenv("TOKENIZER_FILE", str(path))
+    monkeypatch.setattr(L, "_tokenizer", None)
+    monkeypatch.setattr(L, "_tokenizer_load_failed", False)
+    assert L._get_tokenizer() is not None and L._tokenizer_load_failed is False
+
+
 # --------------------------------------------------------------------- trace configs
 
 def test_trace_config_tags_provider_agent_and_session():

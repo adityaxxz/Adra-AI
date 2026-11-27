@@ -157,7 +157,9 @@ def _get_tokenizer():
         return _tokenizer
     try:
         from tokenizers import Tokenizer
-        _tokenizer = Tokenizer.from_pretrained("gpt2")
+        # The production image ships the file (Dockerfile sets TOKENIZER_FILE), so no download at runtime.
+        local = os.getenv("TOKENIZER_FILE")
+        _tokenizer = Tokenizer.from_file(local) if local and os.path.isfile(local) else Tokenizer.from_pretrained("gpt2")
     except Exception as e:
         _tokenizer_load_failed = True
         logger.warning(f"Falling back to char-based truncation, tokenizer load failed: {e}")
