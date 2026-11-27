@@ -10,6 +10,7 @@ import HoldButton from '../../../components/HoldButton';
 import { useWebSocket } from '../../../websocket-hook';
 import { ProjectDirectoryViewer } from '../../../components/ProjectDirectoryViewer';
 import { Sidebar } from '../../../components/Sidebar';
+import { IndexingBanner, type IndexStage } from '../../../components/IndexingBanner';
 import { ChatMessage, TypingIndicator } from '../../../components/ChatMessage';
 import type { ResolveDecision } from '../../../components/EditedFilesReview';
 import {
@@ -75,6 +76,13 @@ function RepositoryPageInner() {
   const [repository, setRepository] = useState<Repository | null>(null);
   const [loading, setLoading] = useState(true);
   const [isIndexing, setIsIndexing] = useState(false);
+  // Indexing panel: current stage + latest line while running, the reason when it fails, the totals when it's done.
+  const [indexStage, setIndexStage] = useState<IndexStage>('scanning');
+  const [indexMessage, setIndexMessage] = useState<string | null>(null);
+  const [indexProgress, setIndexProgress] = useState<number | null>(null);
+  const [indexError, setIndexError] = useState<string | null>(null);
+  const [indexDone, setIndexDone] = useState<string | null>(null);
+  const autoIndexStarted = useRef(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
 
@@ -153,9 +161,18 @@ function RepositoryPageInner() {
     setActiveSessionId(repositoryId, fresh.id);
   }, [repositoryId]);
 
-  // Auto-start indexing
+  // The "Repository indexed" confirmation clears itself after a few seconds.
   useEffect(() => {
-    if (repository && !repository.is_indexed && !isIndexing && !sessionId) {
+    if (!indexDone || isIndexing) return;
+    const t = setTimeout(() => setIndexDone(null), 8000);
+    return () => clearTimeout(t);
+  }, [indexDone, isIndexing]);
+
+  // Auto-start indexing, once per visit. It used to re-run whenever the repository reloaded, so a failed run
+  // (or a failed request) started another one and the banner cycled between "Indexing..." and "not indexed".
+  useEffect(() => {
+    if (repository && !repository.is_indexed && !isIndexing && !sessionId && !autoIndexStarted.current) {
+      autoIndexStarted.current = true;
       handleStartIndexing();
     }
   }, [repository]);
@@ -170,16 +187,21 @@ function RepositoryPageInner() {
     lastProcessedMsgRef.current = latestMessage;
 
     // Indexing messages
-    if (['scanning','chunking','embedding','indexing'].includes(latestMessage.step ?? '')) return;
+    if (isIndexing && ['scanning', 'embedding', 'saving'].includes(latestMessage.step ?? '')) {
+      setIndexStage(latestMessage.step as IndexStage);
+      setIndexMessage(latestMessage.message ?? null);
+      if (latestMessage.step === 'embedding' && latestMessage.progress !== undefined) setIndexProgress(latestMessage.progress);
+      return;
+    }
     if (latestMessage.step === 'complete' && isIndexing) {
-      // The WS `complete` frame is sent before the backend commits is_indexed,
-      // so a single refetch here can read the stale flag. Keep isIndexing on
-      // (the banner stays in its progress state) until the flag flips.
+      // Sent after the backend saves the repository; waitForIndexed still re-reads it to be safe.
+      setIndexDone(latestMessage.message ?? null);
       waitForIndexed();
       return;
     }
     if (latestMessage.type === 'error' && isIndexing) {
       setIsIndexing(false);
+      setIndexError(latestMessage.error || 'Something went wrong while indexing. Please try again.');
       return;
     }
 
@@ -338,6 +360,7 @@ function RepositoryPageInner() {
           stop();
           setRepository(data);
           setIsIndexing(false);
+          setIndexDone(`${data.files_count ?? 0} files, ${data.chunks_count ?? 0} chunks`);
           return;
         }
       } catch {
@@ -348,6 +371,7 @@ function RepositoryPageInner() {
         // release the UI and let the user retry rather than spin forever.
         stop();
         setIsIndexing(false);
+        setIndexError('Lost contact with the indexing run. Please try again; finished files are kept.');
         loadRepository();
       }
     };
@@ -398,13 +422,15 @@ function RepositoryPageInner() {
       try {
         const data = await repositoriesAPI.getRepository(repositoryId);
         setRepository(data);
-        if (data?.is_indexed) break;
+        if (data?.is_indexed) { setIsIndexing(false); return; }
       } catch {
         // Transient; retry until the cap.
       }
       await new Promise(r => setTimeout(r, 1000));
     }
     setIsIndexing(false);
+    setIndexDone(null);
+    setIndexError('Indexing finished but the repository could not be saved. Please try again.');
   };
 
   const loadSidebarData = async () => {
@@ -516,6 +542,11 @@ function RepositoryPageInner() {
   const handleStartIndexing = async () => {
     if (!repository) return;
     setIsIndexing(true);
+    setIndexError(null);
+    setIndexDone(null);
+    setIndexStage('scanning');
+    setIndexMessage(null);
+    setIndexProgress(null);
     const newSessionId = `indexing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     wasConnectedRef.current = false; // new run: don't inherit the last run's connection
     setSessionId(newSessionId);
@@ -526,6 +557,7 @@ function RepositoryPageInner() {
     } catch (e: any) {
       setIsIndexing(false);
       setSessionId(null);
+      setIndexError(userErrorMessage(e, 'Could not start indexing. Please try again.'));
     }
   };
 
@@ -740,47 +772,17 @@ function RepositoryPageInner() {
           </div>
         </header>
 
-        {/* ---- Indexing progress banner ---- */}
-        {(isIndexing || !repository.is_indexed) && (
-          <div
-            className="shrink-0 px-6 py-3 border-b flex items-center gap-4"
-            style={{ background: 'var(--accent-light)', borderColor: 'var(--accent-light)' }}
-          >
-            <div className="w-5 h-5 rounded-full border-2 border-t-indigo-400 border-indigo-400/20 animate-spin shrink-0" />
-            <div className="flex-1 min-w-0">
-              {isIndexing ? (
-                <div>
-                  <p className="text-xs font-medium" style={{ color: 'var(--accent)' }}>Indexing repository…</p>
-                  {latestMessage && (
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {latestMessage.step === 'scanning' && 'Scanning files…'}
-                      {latestMessage.step === 'chunking' && 'Processing chunks…'}
-                      {latestMessage.step === 'embedding' && 'Generating embeddings…'}
-                      {latestMessage.step === 'indexing' && 'Storing in vector database…'}
-                      {latestMessage.step === 'complete' && 'Indexing complete!'}
-                      {latestMessage.message && !['scanning','chunking','embedding','indexing','complete'].includes(latestMessage.step ?? '')
-                        && latestMessage.message}
-                    </p>
-                  )}
-                  {latestMessage?.progress !== undefined && (
-                    <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'var(--accent-light)' }}>
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{ background: 'var(--accent)', width: `${latestMessage.progress}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  This repository hasn't been indexed yet.{' '}
-                  <button onClick={handleStartIndexing} className="text-accent hover:underline underline">
-                    Start indexing
-                  </button>
-                </p>
-              )}
-            </div>
-          </div>
+        {/* ---- Indexing panel ---- */}
+        {(isIndexing || indexError || indexDone || !repository.is_indexed) && (
+          <IndexingBanner
+            status={isIndexing ? 'running' : indexError ? 'failed' : repository.is_indexed ? 'done' : 'idle'}
+            stage={indexStage}
+            message={isIndexing ? indexMessage : indexDone}
+            progress={indexProgress}
+            error={indexError}
+            onStart={handleStartIndexing}
+            onDismiss={() => setIndexDone(null)}
+          />
         )}
 
         {/* ---- File tree drawer (collapsible) ---- */}
@@ -840,7 +842,9 @@ function RepositoryPageInner() {
                 <h2 className="text-lg font-semibold text-fg mb-2">{repository.name}</h2>
                 <p className="text-sm max-w-sm" style={{ color: 'var(--text-secondary)' }}>
                   {!isReady
-                    ? 'Repository is being indexed. You can chat once indexing is complete.'
+                    ? isIndexing
+                      ? 'Repository is being indexed. You can chat once indexing is complete.'
+                      : 'You can chat once the repository is indexed.'
                     : mode === 'ask'
                     ? 'Ask me anything about this codebase — architecture, functions, patterns, or how to make changes.'
                     : "Describe the code changes you want and I'll edit the relevant files across the codebase."}
