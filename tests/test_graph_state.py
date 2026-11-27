@@ -456,3 +456,27 @@ def test_the_integrator_does_not_get_the_table_check_when_editing_a_repo(project
     llm = _editing_llm()
     _run_editing(project, monkeypatch, llm)
     assert "create_all" not in llm.calls["IntegrationResult"][0]["prompt"]
+
+
+def test_generation_does_not_create_a_requirements_file_that_lists_no_packages(project, monkeypatch):
+    """Live: standard-library-only projects all came with an empty requirements.txt."""
+    def respond(schema, prompt=None):
+        return {Plan: Plan(name="P", description="d", techstack="python", features=["f"],
+                           files=[File(path="main.py", purpose="p"), File(path="requirements.txt", purpose="deps")]),
+                TaskPlan: TaskPlan(steps=[Architect(filepath="main.py", task_description="print"),
+                                          Architect(filepath="requirements.txt", task_description="deps")]),
+                IntegrationResult: IntegrationResult(updates=[])}.get(schema)
+    contents = iter(["print('hi')\n", "# No external dependencies\n"])
+    def llm(schema, prompt, **kw):
+        return CoderOutput(content=next(contents)) if schema is CoderOutput else respond(schema)
+    monkeypatch.setattr(G, "structured_invoke", llm)
+    G.project_generation_agent.invoke({"user_prompt": "p", "session_id": "g"}, {"recursion_limit": 30})
+    assert (project / "main.py").exists() and not (project / "requirements.txt").exists()
+
+
+def test_is_empty_requirements():
+    assert G._is_empty_requirements("requirements.txt", "")
+    assert G._is_empty_requirements("backend/requirements-dev.txt", "# none\n\n")
+    assert not G._is_empty_requirements("requirements.txt", "requests==2.32\n")
+    assert not G._is_empty_requirements("notes.txt", "")
+    assert not G._is_empty_requirements("pkg/__init__.py", "")

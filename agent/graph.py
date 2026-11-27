@@ -106,6 +106,15 @@ def _fix_escaped_quotes(content: str, filepath: str, existing: str = "") -> str:
     return fixed
 
 
+def _is_empty_requirements(filepath: str, content: str) -> bool:
+    """A requirements*.txt that lists no packages (blank, or only comments like "# no dependencies"). The planner
+    often lists requirements.txt for standard-library-only projects even though its prompt says not to."""
+    name = filepath.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if not (name.startswith("requirements") and name.endswith(".txt")):
+        return False
+    return not any(line.strip() and not line.strip().startswith("#") for line in content.splitlines())
+
+
 def _keep_trailing_newline(content: str, existing: str) -> str:
     """Fences are stripped with `.strip()`, which also drops the file's final newline; put it back when
     the file had one, or every edit shows a spurious "no newline at end of file" change on its last line."""
@@ -268,7 +277,11 @@ def coder_agent(state: dict) -> dict:
     content = _fix_escaped_quotes(content, curr_task.filepath, existing_content)
     content = _keep_trailing_newline(content, existing_content)
     content, secrets = redact_new_secrets(content, existing_content)       # §3.1: no new credentials in written files
-    write_file.invoke({"path": curr_task.filepath, "content": content})
+    if not existing_content and _is_empty_requirements(curr_task.filepath, content):
+        # Don't create a dependency file with nothing in it; an existing one is still rewritten as asked.
+        logger.info(f"coder_agent: not creating {curr_task.filepath!r}, it lists no packages")
+    else:
+        write_file.invoke({"path": curr_task.filepath, "content": content})
 
     coder_state.current_step_idx += 1
     if secrets:
