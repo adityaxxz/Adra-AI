@@ -90,6 +90,22 @@ export default function ProjectPage() {
     }
   }, [latestMessage]);
 
+  // Safety net for a missed WebSocket "complete" (dropped connection, or a reload just as the run ends): while the
+  // project is running, re-read its status every 5 s and leave the running state as soon as it changes.
+  useEffect(() => {
+    if (project?.status !== 'in_progress') return;
+    const timer = setInterval(async () => {
+      try {
+        const data = await projectsAPI.getProject(projectId);
+        if (data.status !== 'in_progress') {
+          setProject(data);
+          setIsGenerating(false);
+        }
+      } catch {}
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [project?.status, projectId]);
+
   const loadProject = async () => {
     try {
       const data = await projectsAPI.getProject(projectId);
@@ -103,7 +119,9 @@ export default function ProjectPage() {
           const sessions = await generationAPI.listSessions(10);
           const projectSession = sessions.find((s: any) => s.project_id === projectId);
           if (projectSession) {
-            setSessionId(projectSession.session_id);
+            // GET /sessions returns `id`. Reading `session_id` gave undefined, which closed the run's WebSocket a second
+            // in, so the page never received "complete" and sat on "Initializing..." until reloaded.
+            setSessionId(projectSession.id);
           }
         } catch (error) {
           console.log('Could not fetch session for in-progress project');
