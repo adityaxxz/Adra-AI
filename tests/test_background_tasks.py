@@ -190,3 +190,31 @@ async def test_a_generation_reports_its_steps_to_the_page_while_it_runs(tmp_path
     assert steps == ["Planning the project", "Writing app.py (1 of 1)", "Applying final touches"]
     assert frames.sent.index(frames.of("complete")[0]) > frames.sent.index(frames.of("progress")[-1])
     assert not any(f.get("message") == "..." for f in frames.sent), "no placeholder text reaches the page"
+
+
+def test_indexing_failures_say_what_happened_and_how_far_it_got():
+    daily = RuntimeError("429 RESOURCE_EXHAUSTED quota per day")
+    rate = RuntimeError("429 Too Many Requests, try again in 20s")
+    assert BT._indexing_message(daily, 3, 10).startswith("We've hit today's embedding limit")
+    assert "3 of 10 files were indexed and are kept" in BT._indexing_message(daily, 3, 10)
+    assert BT._indexing_message(rate).startswith("The embedding service is busy right now")
+    assert "files were indexed" not in BT._indexing_message(rate)
+    assert BT._indexing_message(RuntimeError("Failed to clone repository: x")).startswith("Couldn't download")
+    assert "RESOURCE_EXHAUSTED" not in BT._indexing_message(daily, 3, 10)
+
+
+async def test_indexing_reports_real_progress_and_a_friendly_error(monkeypatch):
+    frames = _Frames(monkeypatch)
+
+    def fake_index(repo_path, collection_name, on_progress=None):
+        on_progress(0, 4)
+        on_progress(1, 4)
+        raise RuntimeError("429 RESOURCE_EXHAUSTED {'quota': 'per day'}")
+    monkeypatch.setattr(BT, "index_repository", fake_index)
+    out = await BT.BackgroundTaskManager(max_workers=1).index_repository_task("idx", "/repo", "c")
+
+    assert out["success"] is False and "RESOURCE_EXHAUSTED" in out["error"]
+    assert [f["message"] for f in frames.of("progress")] == [
+        "Scanning files", "Embedding code (0 of 4 files)", "Embedding code (1 of 4 files)"]
+    [error] = frames.of("error")
+    assert "today's embedding limit" in error["error"] and "1 of 4 files" in error["error"]

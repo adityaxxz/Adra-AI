@@ -74,6 +74,26 @@ def _user_message(exc: BaseException, *, editing: bool) -> str:
     return f"{text} No files were changed." if editing else text
 
 
+def _indexing_message(exc: BaseException, done: int = 0, total: int = 0) -> str:
+    """What the repository page shows when indexing fails: the kind of problem, plus how far it got. Files that were
+    finished stay in the index (they're stored one by one), so trying again picks up from there."""
+    kind, _ = classify_rate_limit(exc)
+    low = str(exc).lower()
+    if kind == "daily":
+        text = "We've hit today's embedding limit, so indexing stopped. Please try again later."
+    elif kind == "rate" or "overloaded" in low or "503" in low:
+        text = "The embedding service is busy right now, so indexing stopped. Please try again in a minute."
+    elif "no supported files" in low:
+        return "No supported code files were found in this repository."
+    elif "failed to clone" in low:
+        return "Couldn't download this repository from GitHub. Check that it's public and the URL is right."
+    else:
+        text = "Something went wrong while indexing. Please try again."
+    if done:
+        text += f" {done} of {total} files were indexed and are kept, so trying again continues from there."
+    return text
+
+
 def _progress_sender(session_id: str, loop: asyncio.AbstractEventLoop) -> Callable[[str], None]:
     """A callback the run's worker thread calls to put a status line ("Planning the changes") in the
     chat. Hands the broadcast to the event loop, since the graph runs off it."""
@@ -514,45 +534,38 @@ class BackgroundTaskManager:
         repo_path: str,
         collection_name: str
     ) -> Dict:
-        """Index repository in background with progress updates."""
+        """Index a repository in the background, reporting real progress: `scanning`, then `embedding` frames with
+        "N of M files" as each file is stored. The caller sends the final `complete` once the repository row is
+        saved. On failure the page gets `_indexing_message` (what went wrong, how far it got) instead of the raw
+        error; files already stored stay stored, so trying again continues from there."""
         reporter = ProgressReporter(session_id)
         task_id = self.generate_task_id()
-        
+        loop = asyncio.get_event_loop()
+        counts = {"done": 0, "total": 0}
+
+        def on_progress(done: int, total: int) -> None:   # called from the worker thread
+            counts.update(done=done, total=total)
+            asyncio.run_coroutine_threadsafe(manager.broadcast_progress(
+                session_id, step="embedding", message=f"Embedding code ({done} of {total} files)",
+                progress=round(done / total * 100) if total else 100,
+            ), loop)
+
         try:
-            await reporter.start(f"Indexing repository: {repo_path}")
-            reporter.set_total_steps(4)
-            
-            # Step 1: Scan files
-            await reporter.step("scanning", "Scanning repository files")
-            
-            # Step 2: Chunk files
-            await reporter.step("chunking", "Processing and chunking files")
-            
-            # Step 3: Generate embeddings
-            await reporter.step("embedding", "Generating embeddings")
-            
-            # Step 4: Index in Qdrant
-            await reporter.step("indexing", "Indexing in vector database")
-            
-            loop = asyncio.get_event_loop()
+            await reporter.update("scanning", "Scanning files", progress=0)
             stats = await loop.run_in_executor(
                 self.executor,
-                index_repository,
-                repo_path,
-                collection_name
+                lambda: index_repository(repo_path, collection_name, on_progress=on_progress),
             )
-            
-            await reporter.step("complete", f"Indexing completed: {stats.files_indexed} files indexed")
-            
+            await reporter.update("saving", "Saving", progress=100)
             return {
                 "success": True,
                 "stats": stats,
                 "task_id": task_id
             }
-            
+
         except Exception as e:
             logger.error(f"Repository indexing failed: {e}", exc_info=True)
-            await reporter.error(f"Repository indexing failed: {str(e)}")
+            await reporter.error(_indexing_message(e, counts["done"], counts["total"]))
             return {
                 "success": False,
                 "error": str(e),

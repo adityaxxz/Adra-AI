@@ -200,3 +200,56 @@ def test_empty_repository_clears_the_index(make_repo, store):
     (root / "calc.py").unlink()
     S.index_repository(str(root), "c")
     assert store.points == {}
+
+
+class _FailAfter:
+    """Wraps FakeStore.index_chunks to fail (like an embedding rate limit) once `n` files have been stored."""
+    def __init__(self, store, n):
+        self.store, self.n, self.calls = store, n, 0
+
+    def __call__(self, chunks, collection_name=None):
+        if self.calls >= self.n:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+        self.calls += 1
+        self.store.index_chunks(chunks, collection_name)
+
+
+def test_a_run_that_stops_part_way_keeps_finished_files_and_the_retry_continues(make_repo, store, monkeypatch):
+    """Live: a rate limit at the end of a big repo threw away every embedding, so each retry failed the same way."""
+    root = make_repo({"a.py": "A = 1\n", "b.py": "B = 2\n", "c.py": "C = 3\n"})
+    monkeypatch.setattr(S, "index_chunks", _FailAfter(store, 2))
+    with pytest.raises(RuntimeError):
+        S.index_repository(str(root), "c")
+    assert len({p["file_path"] for p in store.points.values()}) == 2, "the two finished files are kept"
+
+    monkeypatch.setattr(S, "index_chunks", store.index_chunks)
+    before = store.embedded
+    stats = S.index_repository(str(root), "c")
+    assert stats.files_skipped == 2 and stats.files_indexed == 1 and store.embedded - before == stats.chunks_created
+    assert len(store.points) == _fresh_chunk_count(root)
+
+
+def test_a_modified_file_that_fails_to_embed_is_not_marked_up_to_date(make_repo, store, monkeypatch):
+    """Kept chunks get the new file hash only after the file's changed chunks are stored; stamping first would make
+    the next run skip the file with its changed chunk missing."""
+    root = make_repo({"calc.py": V1})
+    S.index_repository(str(root), "c", reset=True)
+    _write(root, "calc.py", V1.replace("return a * b", "return a * b  # scaled"))
+    monkeypatch.setattr(S, "index_chunks", _FailAfter(store, 0))
+    with pytest.raises(RuntimeError):
+        S.index_repository(str(root), "c")
+
+    monkeypatch.setattr(S, "index_chunks", store.index_chunks)
+    stats = S.index_repository(str(root), "c")
+    assert stats.files_indexed == 1, "the file is diffed again"
+    assert len(store.points) == _fresh_chunk_count(root)
+    assert any("scaled" in p["content"] for p in store.points.values())
+
+
+def test_progress_counts_only_the_files_that_need_embedding(make_repo, store):
+    root = make_repo({"a.py": "A = 1\n", "b.py": "B = 2\n"})
+    S.index_repository(str(root), "c")
+    _write(root, "c.py", "C = 3\n")
+    seen = []
+    S.index_repository(str(root), "c", on_progress=lambda d, t: seen.append((d, t)))
+    assert seen == [(0, 1), (1, 1)]

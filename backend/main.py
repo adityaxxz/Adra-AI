@@ -35,7 +35,7 @@ from backend.auth import (
 )
 from backend.db_models import Base, User, UserRole, Project, Repository, Session, SessionMode, ProjectStatus, AgentRun, EvalResult, Feedback
 from backend.websocket_manager import manager, ProgressReporter
-from backend.background_tasks import task_manager
+from backend.background_tasks import task_manager, _indexing_message
 from backend.run_store import record_agent_run
 from backend.feedback_store import save_feedback
 from backend.online_eval import ON_THUMBS_DOWN, grade_run, grade_run_in_new_session, is_sampled
@@ -1034,11 +1034,16 @@ async def _run_indexing_task(repository_id: str, session_id: str):
             if total_chunks is not None:
                 repository.chunks_count = total_chunks
             await db.commit()
+            # Sent after the commit, so the page can read is_indexed straight away.
+            await reporter.update(
+                "complete", f"{repository.files_count} files, {repository.chunks_count or 0} chunks",
+                progress=100,
+            )
 
         except Exception as e:
             logger.error(f"Background indexing task failed: {e}", exc_info=True)
             await db.rollback()
-            await reporter.error(f"Indexing failed: {str(e)}")
+            await reporter.error(_indexing_message(e))
 
 
 @app.post("/repositories/{repository_id}/index")
